@@ -78,50 +78,93 @@ end
 --the main game
 function game_update()
  
- --apply gravity
- p.y+=gravity
- 
-	if btn(btn_left) then 
-	  p.x-=1
-	  p.flp=true
-	end
-	if btn(btn_right) then
-	  p.x+=1
-	  p.flp=false
-	end
-	--todo add faster falling?
-	if btn(btn_down) then p.y+=1 end
- 
- --todo implement jump
- if btn(btn_o) then p.y-=1 end
+ player_update() 
+
 end
 
 function game_draw()
   cls()
-  map(0,0)
-  spr(p.sp,p.x,p.y,1,1, p.flp, fasle)
 end
 -->8
 --collide
 
---
+-- collide_map
+-- check if there is a collision between an object and a sprite
 -- obj: table x,y,w,h
 -- aim: direction,left,right,up,down
 -- flag: sprite flag type
 function collide_map(obj,aim,flag)
-  local x1=0 local y1=0
-  local x2=0 local y2=0
+  
+  local x=obj.x  local y=obj.y
+  local w=obj.w  local h=obj.h
+  
+  local x1=0  local y1=0
+  local x2=0  local y2=0
   
   if aim=="left"
-  
+    x1=x-1  y1=y
+    x2=x    y2=y+h-1
+    
   elseif aim=="right" then
-  
+    x1=x+w    y1=y
+    x2=x+w+1  y2=y+h-1
+    
   elseif aim=="up" then
-  
+    x1=x     y1=y+h
+    x2=x+w-1 y2=y+h
+    
   elseif aim=="down" then
-  
+    x1=x    y1=y+h
+    x2=x+w  y2=y+h
   end
-   
+  x1/=8  y1/=8
+  x2/=8  y2/=8
+  
+  if fget(nget(x1, y1), flag) 
+  or fget(nget(x1, y2), flag) 
+  or fget(nget(x2, y1), flag) 
+  or fget(nget(x2, y2), flag) then
+    return true
+  end
+  
+  return false 
+end
+-->8
+--player
+
+function player_update()
+  --physics
+  player.dy+=gravity
+  player.dx*=friction
+  
+  if btn(btn_left) then
+    player.dx-=player.acc_x
+    player.state="running"
+    player.flp=true
+  end
+  if btn(btn_right) then
+    player.dx+=player.acc_x
+    player.state="running"
+    player.flp=false
+  end
+  
+  if btnp(btn_x) then
+    player.dy-=player.acc_y
+    player.state="jumping"
+  end
+  
+  if player.dy>0 then
+    player.state="falling"
+    
+    if collide_map()
+  end
+  
+  player.x+=player.dx
+  player.y+=player.dy
+  
+end
+
+function player_draw()
 end
 __gfx__
 00000000000bbb0000000bb000000bb000000bb00000bb0000000000000000000000000000000000000000000000000000000000000000000000000000000000
