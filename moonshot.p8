@@ -18,6 +18,8 @@ friction=0.425
 
   
 function _init()
+  --start music
+  music(0)
   --map starting position
 	 map_x=0
 	 map_y=0
