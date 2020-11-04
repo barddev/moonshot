@@ -101,7 +101,7 @@ end
 
 function game_draw()
   cls()
-  map(0,32)
+  background_draw()
   map(0,0)
   print(p.state, 5,5)
   spr(p.sp,p.x,p.y,1,1,p.flp,false)
@@ -264,18 +264,18 @@ end
 -->8
 --backgroud
 
-star_x-=
-star_spd=0.5
+star_x=0
+star_spd=0.1
 
 
 function background_update()
-   star_x-=star_spd
-   if map_x<-127 then map_x=0 end
+   star_x-=cam_x
+   if star_x<-127 then star_x=0 end
    
 end
 
 function background_draw()
-  map(0,32,map_x+128,0,16,16)
+  map(0,32,star_x+128,0,16,16)
 end
 __gfx__
 00000000000bbb0000000bb000000bb000000bb000000bb00000bb00000000000000000000000000000000000000000000000000000000000000000000000000
