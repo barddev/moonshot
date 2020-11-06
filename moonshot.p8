@@ -16,26 +16,24 @@ screen={
   w=128,
 }
 
-
 --game physics values
 gravity=0.10
 friction=0.425
-
   
 function _init()
   stars_init(screen.w,screen.h,32)
   ticker=0
   --start music
-  --music(0)
+  music(0)
   --map information
-	 map_x=0
-	 map_y=0
+  map_x=0
+  map_y=0
 
-	 map_start=0
-	 map_end=256
+  map_start=0
+  map_end=256
 	 
 	 
-	 --game functions
+  --game functions
   game={
     update=menu_update,
     draw=menu_draw,
@@ -43,7 +41,6 @@ function _init()
   
   --camera
   cam_x=0
- 
   
   --player
   p={
@@ -116,6 +113,7 @@ end
 
 function game_update()
  
+ egg_update()
  player_update()
  player_animate()
  
@@ -128,8 +126,8 @@ function game_draw()
   stars_draw()
   background_draw()
   map(0,0)
-  print(p.state, 5,5)
-  spr(p.sp,p.x,p.y,1,1,p.flp,false)
+  egg_draw()
+  player_draw()
 end
 -->8
 --collide
@@ -287,6 +285,10 @@ function player_animate()
   end
 end
 
+function player_draw()
+  spr(p.sp,p.x,p.y,1,1,p.flp,false)
+end
+
 
 -->8
 --camera
@@ -350,26 +352,39 @@ egg={
   --animation timing
   anim=0,
   --sprite x position
-  x=80,
+  x=50,
   --sprite y position
-  y=80,
+  y=85,
   --sprite width/height in pixel
   w=8,
   h=8,
   --player y speed
   dy=0,
-  acc_y=2
+  acc_y=2,
+  dir=1,
+  anim=0
 }
 
 function egg_init()
 end
 
 function egg_update()
+  egg_animate(egg)
 end
 
 function egg_draw()
-		
+  spr(egg.sp,egg.x,egg.y)
 end
+
+function egg_animate(e)
+  if time()-e.anim>.3 then
+    e.anim=time()
+    e.dir*=-1
+    e.y+=e.dir
+  end
+end
+
+
 __gfx__
 00000000000bbb0000000bb000000bb000000bb000000bb00000bb00000000000000000000000000000000000000000000000000000000000000000000000000
 00000000002bbcb00002bbcb0002bbcb0002bbcb0002bbcb002bbcb0000000000000000000000000000000000000000000000000000000000000000000000000
