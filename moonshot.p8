@@ -16,6 +16,7 @@ screen={
   w=128,
 }
 
+
 --game physics values
 gravity=0.10
 friction=0.425
@@ -195,11 +196,12 @@ function player_update()
   --todo revisit this
   --and add variable jumping
   --add buffered jumping
-  p.grounded_press-=60
+  p.grounded_press-=0.017
   if p.grounded then
     p.grounded_press=p.grounded_press_time
   end
-  p.jump_press-=60
+--   p.jump_press-=60
+  p.jump_press-=0.017
   if btnp(btn_x) then
     p.jump_press=p.jump_press_time
   end
