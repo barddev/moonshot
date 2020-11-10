@@ -13,3 +13,5 @@ We used the following as resources for learning how to develop on this system:
   game usage, was used to get started on the platformer
 * [Boxface - a simple platform setup](https://www.lexaloffle.com/bbs/?tid=27749) for
   better code organization / usage of tables and collision.
+* [Jonas Tyroller](https://www.youtube.com/channel/UC_p_9arduPuxM8DHTGIuSOg)
+  for telling us why our platformer sucks and how to fix it.
