@@ -38,6 +38,7 @@ globals = {
     debug_var = "",
     -- vector2d
     debug_position = "",
+    debug_vel = "",
 
     -- stars 
     stars_color_pal={1,2,9,12,13},
@@ -99,6 +100,7 @@ function game:draw()
         if (btn(5)) key = key .. "o "
         print("user input: " .. key, x, 7, 9)
         print("position: " .. globals.debug_position, x, 14, 9)
+        print("velocity: " .. globals.debug_vel, x, 21, 9)
 
     end
 
@@ -404,10 +406,10 @@ end
 -- actor requires
 --  state: with falling/running/jumping/idle
 --  position: vector2d
---  dx,dy
+--  vel: vector2d
 function actor_move(actor)
     -- check y direction
-    if actor.dy > 0 then
+    if actor.vel.y > 0 then
         actor.state = "falling"
 
         -- if player falls off the map
@@ -417,10 +419,11 @@ function actor_move(actor)
         end
 
         -- limit actor to max speed
-        actor.dy = mid(-actor.dy, actor.dy, actor.max_dy)
+        actor.vel.y = mid(-actor.max_vel.y, actor.vel.y, actor.max_vel.y)
 
         if actor_map_collision(actor, "down", globals.solid) then
             actor.grounded = true
+
             -- left/right movement
             if btn(0)
             or btn(1) then
@@ -428,40 +431,39 @@ function actor_move(actor)
             else
                 actor.state = "idle"
             end
-            actor.dy = 0
+            actor.vel.y = 0
             actor.position.y -= ((actor.position.y + actor.h + 1) % 8) - 1
         end
 
         if actor_map_collision(actor, "down", globals.spike) then
-            actor.dy = 0
+            actor.vel.y = 0
             actor.health -= actor.health
         end
 
-    elseif actor.dy < 0 then
+    elseif actor.vel.y < 0 then
         actor.state = "jumping"
         if actor_map_collision(actor, "up", globals.solid) then
-            actor.dy = 0
+            actor.vel.y = 0
         end
     end
 
     -- check x direction
     -- left movement
-    if actor.dx < 0 then
+    if actor.vel.x < 0 then
         -- limit actor to max speed
-        actor.dx = mid(-actor.max_dx, actor.dx, actor.max_dx)
+        actor.vel.x = mid(-actor.max_vel.x, actor.vel.x, actor.max_vel.x)
         if actor_map_collision(actor, "left", globals.solid) then
-            actor.dx = 0
+            actor.vel.x = 0
         end
     -- right movement
-    elseif actor.dx > 0 then
-        actor.dx = mid(-actor.max_dx, actor.dx, actor.max_dx)
+    elseif actor.vel.x > 0 then
+        actor.vel.x = mid(-actor.max_vel.x, actor.vel.x, actor.max_vel.x)
         if actor_map_collision(actor, "right", globals.solid) then
-            actor.dx = 0
+            actor.vel.x = 0
         end
     end
 
-    actor.position.x += actor.dx
-    actor.position.y += actor.dy
+    actor.position += actor.vel
 
     --limit to map
     if actor.position.x < m.map_start then
@@ -573,27 +575,26 @@ function player:init(x, y)
 
 
     -- movement
-    self.speed = 1.5
     self.position = vector2d(x, y)
-    self.acc = 0.5
-    self.dcc = 0.8
-    self.dcc_air = 1.5
 
-    -- x
-    self.dx = 0
-    self.max_dx = 2
+    self.vel = vector2d(0, 0)
+    self.max_vel = vector2d(2, 2)
 
-    -- y
-    self.dy = 0
-    self.acc_y = 2
-    self.max_dy = 2
+    self.acc = vector2d(0.5, 2)
+    self.dcc = vector2d(0.8, 0)
+    self.dcc_air = vector2d(1.5, 0)
 
     -- jumping
+    self.jump_hold = globals.grav
+
+    -- check if almost touch ground
     self.jump_press = 0
     self.jump_press_time = 0.2
+
     self.grounded_press = 0
     self.grounded_press_time = 0.25
     self.grounded = false
+
   
 end
 
@@ -623,7 +624,8 @@ function player:jump()
     self.jump_press = 0
     self.grounded_press = 0
     self.grounded = false
-    self.dy -= p.acc_y
+
+    self.vel.y -= p.acc.y 
 end
 
 function player:death()
@@ -642,23 +644,23 @@ function player:update()
 
     globals.debug_position = self.position
 
-    self.dy += globals.grav
-    self.dx *= globals.friction
+    self.vel.x *= globals.friction 
+    self.vel.y += globals.grav + self.jump_hold
 
     -- left
     if btn(0) then
-        self.dx -= self.acc
+        self.vel.x -= self.acc.x
         self.flip = true
     -- right
     elseif btn(1) then
-        self.dx += self.acc
+        self.vel.x += self.acc.x
         self.flip = false
     -- allow a minor delay before changing directions/stopping
     else
         if self.grounded then
-            self.dx *= self.dcc
+            self.vel.x *= self.dcc.x
         else
-            self.dx *= self.dcc_air
+            self.vel.x *= self.dcc_air.x
         end
     end
 
@@ -669,8 +671,16 @@ function player:update()
         self.grounded_press = self.grounded_press_time
     end
     self.jump_press -= 1/60
+
     if btnp(5) then
         self.jump_press = self.jump_press_time
+    end
+    -- h check for how long jump is press
+    if btn(5) then
+        self.jump_hold -= 0.005
+        if (self.jump_hold < 0) self.jump_hold = 0
+    else
+        self.jump_hold = globals.grav
     end
 
     if self.jump_press > 0
@@ -678,6 +688,7 @@ function player:update()
         self:jump()
     end
 
+    globals.debug_vel = self.vel
     actor_move(self)
 
     if self.health <= 0 then
