@@ -362,11 +362,13 @@ end
 function levelmanager:update()
     self.levels[self.index]:update()
     p:update()
-    c:update(p.position.x, p.w)
+    bullets_update()
+    c:update(p.pos.x, p.w)
 end
 
 function levelmanager:draw()
     self.levels[self.index]:draw()
+    bullets_draw()
     p:draw()
 end
 
@@ -401,6 +403,15 @@ end
 -->8
 -- actor
 
+-- actor direction determines if actor is moving left or right
+-- actor direction determines if actor is moving left or right
+-- returns 1 if moving right, and returns -1 if moving left
+-- assumes sprite is facing right and actor has var flip 
+function actor_direction(flip)
+    if (flip) return -1
+    return 1
+end
+
 -- actor_move
 -- moves actor on screen and checks for collisions
 -- actor requires
@@ -413,7 +424,7 @@ function actor_move(actor)
         actor.state = "falling"
 
         -- if player falls off the map
-        if actor.position.y > m.y + 128 then
+        if actor.pos.y > m.y + 128 then
             actor.health -= actor.health
             return
         end
@@ -432,7 +443,7 @@ function actor_move(actor)
                 actor.state = "idle"
             end
             actor.vel.y = 0
-            actor.position.y -= ((actor.position.y + actor.h + 1) % 8) - 1
+            actor.pos.y -= ((actor.pos.y + actor.h + 1) % 8) - 1
         end
 
         if actor_map_collision(actor, "down", globals.spike) then
@@ -463,14 +474,14 @@ function actor_move(actor)
         end
     end
 
-    actor.position += actor.vel
+    actor.pos += actor.vel
 
     --limit to map
-    if actor.position.x < m.map_start then
-        actor.position.x = m.map_start
+    if actor.pos.x < m.map_start then
+        actor.pos.x = m.map_start
     end
-    if actor.position.x > m.map_end - actor.w then
-        actor.position.x = m.map_end - actor.w
+    if actor.pos.x > m.map_end - actor.w then
+        actor.pos.x = m.map_end - actor.w
     end 
 
 
@@ -486,7 +497,7 @@ end
 -- returns: bool
 function actor_map_collision(actor, direction, flag)
 
-    local x=actor.position.x  local y=actor.position.y
+    local x=actor.pos.x  local y=actor.pos.y
     local w=actor.w  local h=actor.h
   
     local x1=0  local y1=0
@@ -575,7 +586,7 @@ function player:init(x, y)
 
 
     -- movement
-    self.position = vector2d(x, y)
+    self.pos = vector2d(x, y)
 
     self.vel = vector2d(0, 0)
     self.max_vel = vector2d(2, 2)
@@ -636,16 +647,25 @@ function player:death()
         g:change_state(game_over)
     else
         -- TODO this needs adjusting
-        p.position = vector2d(20, 20)
+        p.pos = vector2d(20, 20)
     end
+end
+
+function player:shoot()
+    local b = bullet:new(self.pos, 32, self.flip)
+    sfx(08)
+    add(bullets, b)
 end
 
 function player:update()
 
-    globals.debug_position = self.position
+    globals.debug_position = self.pos
 
     self.vel.x *= globals.friction 
     self.vel.y += globals.grav + self.jump_hold
+
+    -- shooting
+    if (btnp(4)) self:shoot()
 
     -- left
     if btn(0) then
@@ -700,7 +720,7 @@ end
 function player:draw()
     self:draw_lives()
     self:animate()
-    spr(self.sp, self.position.x, self.position.y, 1, 1, self.flip, false)
+    spr(self.sp, self.pos.x, self.pos.y, 1, 1, self.flip, false)
 end
 
 
@@ -750,6 +770,78 @@ end
 function cam:reset()
     camera()
 end
+
+-->8
+-- bullets
+
+-- array of all bullets
+bullets={}
+function bullets_update()
+    for b in all(bullets) do
+        b:update()
+
+        local del_bullet = false
+
+        if b.pos.x < b.origin.x - b.distance 
+        or b.pos.x > b.origin.x + b.distance 
+        or b.pos.x < 0 then
+            del_bullet = true
+        end
+
+        -- assumes sprite faces right
+        local direction = "right"
+        if (b.flip) direction = "left"
+        collide_wall = actor_map_collision(b, direction, globals.solid)
+        if collide_wall then
+            del_bullet = true
+        end
+
+        if (del_bullet) del(bullets, b)
+
+    end
+end
+
+function bullets_draw()
+    for b in all(bullets) do
+        b:draw()
+    end
+end
+
+-- actual bullet obj
+bullet={}
+
+-- create a new bullets object
+-- pos: position vector
+-- direction: string for left or right ("left", "right") 
+function bullet:new(pos, sp, flip)
+    local o = {}
+    setmetatable(o, self)
+    self.__index = self
+    o.sp = 32
+    o.pos = pos
+    -- shot origin 
+    o.origin = pos
+    --shot distance
+    o.distance = 50
+
+    -- used for map collision
+    o.w = 8
+    o.h = 8
+
+    o.velocity = vector2d(1.5 * actor_direction(flip), 0)
+    o.flip = flip
+    return o 
+end
+
+function bullet:update()
+    self.pos += self.velocity
+end
+
+function bullet:draw()
+    spr(self.sp, self.pos.x, self.pos.y, 1, 1, self.flip, false)
+end
+
+
 
 -->8
 -- utils
@@ -954,12 +1046,32 @@ __sfx__
 011800200c0430c0430c0433f003246150000000000246150c05300000000000c0530c0530c01324600246150c0430c0230c0530c0432461500000000000c04300000000000c043180330c043180002461524615
 01300000135221352213522135221351213532135321353218532185221852218512185121851218512185122b5222e52233522335223352224532185421654218542185521b5521d5521f542225422453227522
 0118002000043000430304300003076150300003000006150c05300000000000c0530c0530c01324600246150c0430c0230c0530c0432461300000000000c04000000000000c040180300c040180002461024610
-00300010050300a0300c0400c0300c0400c0400a03007040050300503005020050300a0400a040050300304000000050500c0400c0300c0400c0400a03007040050500505005050050500a0500a0500505003050
+01300010050300a0300c0400c0300c0400c0400a03007040050300503005020050300a0400a040050300304000000050300a0300c0400c0300c0400c0400a030070400500005000050000a0000a0000500003000
 001800200f7301373116730187301b7301d7301b7301b7301873018730187301b7301f7301d73022730227301f7301f7301f7301b7301d73022730227301f7301f7301d7301d7301b7301b730167301873018730
 000600000264012640066400463009620056100060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600
 000100002903024030210301f0201c0201b0301903018020160301503014030130201202011020100300f0300c0300a0400904009040080300703007030060200502004020030300304004040020400104011030
+000600000b6500c6500d6500d6500e6500c6500a65009650086500763006610000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000200006300063030630000307625030000300000625005000006300063005000762503053005000050000063000630304300000076250300003000006250050000063000630050007625005000050000500
+001000200a0100c0100c0100a01005010070100a0100c01011010130100f0100c0100c0100c0100f0101301016010130100f0100c0100f01011010130101601016010110100f010130100f010110100f0100f010
+001000000077503705007050077500705007050077500705007050077500705007050077500705007750070500775037050070500775007050070500775007050070500775007050070503775007050077500705
+011000000a0130c0130c0130a01305013070130a0130c01311013130130f0130c0130c0130c0130f0131301316013130130f0130c0130f01311013130131601316013110130f013130130f013110130f0130f013
 __music__
-01 02010344
-01 06070344
 00 02010344
+06 06070344
+00 02010344
+01 4b4c0d4e
+01 41420d44
+01 41420d0e
+01 41420d0e
+01 410c0d0e
+01 410c0d0e
+01 0b0c0d0e
+01 0b0c0d0e
+01 0b0c0d0e
+01 4b0c4d4e
+03 0b0c0d0e
+00 4b0c4d4e
+03 0b0c0d0e
+00 41424344
+03 0b0c0d0e
 
