@@ -354,20 +354,29 @@ function levelmanager:init()
     -- set camera
     c:init(m.map_start, m.map_end)
 
-    level_1:init(m, b)
+    -- pos, sp, hitbox, health, bullet_sp, acc
+    local level_baddies = {
+        baddie:new(vector2d(70, 70), 17, {x=0,y=0,w=8,h=8}, 3, 0, vector2d(1.5, 0))
+    }
+
+    level_1:init(m, b, level_baddies)
     add(self.levels, level_1)
 
 end
 
 function levelmanager:update()
-    self.levels[self.index]:update()
+    local i = self.index
+    self.levels[i]:update()
+    baddies_update(self.levels[i].baddies)
     p:update()
     bullets_update()
     c:update(p.pos.x, p.w)
 end
 
 function levelmanager:draw()
-    self.levels[self.index]:draw()
+    local i = self.index
+    self.levels[i]:draw()
+    baddies_draw(self.levels[i].baddies)
     bullets_draw()
     p:draw()
 end
@@ -387,8 +396,9 @@ function level:new()
     return o 
 end
 
-function level:init(m, b)
+function level:init(m, b, badguys)
     self.background = b
+    self.baddies = badguys
     -- music(1)
 end
 
@@ -488,6 +498,118 @@ function actor_move(actor)
 end
 
 
+-->8
+-- baddie
+
+function baddies_update(baddies)
+    for b in all(baddies) do
+        b:update()
+        if b.health <= 0 then
+            del(baddies, b)
+        end
+    end
+end
+
+function baddies_draw(baddies)
+    for b in all(baddies) do
+        b:draw()
+    end
+end
+
+
+
+baddie = {}
+
+-- baddie:new
+-- initalize an enemy
+-- sp: sprite number of enemy
+-- pos: vector2d start position 
+-- hitbox: hitbox table
+-- health: starting health
+-- bullet_sp: sprite number for bullet
+-- acc: acceleration vector2d
+function baddie:new(pos, sp, hitbox, health, bullet_sp, acc)
+    local o = {}
+    setmetatable(o, self)
+    self.__index = self
+
+    self.sp = sp
+    self.bullet_sp = bullet_sp
+    self.hitbox = hitbox
+    self.w = 8
+    self.h = 8
+    self.pos = pos
+    self.health = health
+    self.flip = true
+
+    self.vel = vector2d(0, 0)
+    self.max_vel = vector2d(2, 2)
+
+    self.acc = acc
+
+    return o 
+end
+
+function baddie:update()
+    -- TODO see why this is so slow
+    self.vel.y += globals.grav
+    self.vel.x *= globals.friction
+
+    actor_move(self)
+
+    collide_actor = actor_map_collision(self, "down", globals.actor)
+
+    -- check if hit by bullet
+    for b in all(bullets) do
+        if actor_collision(self, b) then
+            self.health -= 1
+            del(bullets, b)
+        end
+    end
+
+end
+
+function baddie:draw()
+    spr(self.sp, self.pos.x, self.pos.y, 1, 1, self.flip, false)
+end
+
+-- actor_collision
+-- check collision between two actors
+-- requires a hitbox
+-- a: actor 1
+-- b: actor 2
+-- returns true if collision, false otherwise
+function actor_collision(actor_1, actor_2)
+
+    -- local a = actor_1.hitbox
+    -- local b = actor_2.hitbox
+
+    local a = {}
+    a.x = actor_1.pos.x + actor_1.hitbox.x
+    a.y = actor_1.pos.y + actor_1.hitbox.y
+    a.w = actor_1.hitbox.w
+    a.h = actor_1.hitbox.h
+    local b = {}
+    b.x = actor_1.pos.x + actor_1.hitbox.x
+    b.y = actor_1.pos.y + actor_1.hitbox.y
+    b.w = actor_1.hitbox.w
+    b.h = actor_1.hitbox.h
+
+    -- move hitbox to the correct position
+    a.x += actor_1.pos.x
+    a.y += actor_1.pos.y
+    b.x += actor_2.pos.x
+    b.y += actor_2.pos.y
+
+    if a.x < b.x + b.w
+    and a.x + a.w > b.x
+    and a.y < b.y + b.h
+    and a.y + a.h > b.y then
+        return true
+    end
+    return false
+end
+
 
 -- actor_map_collision
 -- check if there is a collision between an object and a sprite
@@ -559,7 +681,7 @@ function player:new()
     -- width/height of sprite
     o.w = 8
     o.h = 8
-    self.velocity = vector2d(0, 0)
+    self.vel = vector2d(0, 0)
 
     return o
 end
@@ -643,7 +765,6 @@ function player:death()
     self.lives -= 1
     self.health = 1
     if self.lives <= 0 then
-        globals.debug_var = "player died"
         g:change_state(game_over)
     else
         -- TODO this needs adjusting
@@ -652,7 +773,8 @@ function player:death()
 end
 
 function player:shoot()
-    local b = bullet:new(self.pos, 32, self.flip)
+
+    local b = bullet:new(self.pos, 32, {x=5,y=2,w=3,h=3}, self.flip)
     sfx(08)
     add(bullets, b)
 end
@@ -813,7 +935,7 @@ bullet={}
 -- create a new bullets object
 -- pos: position vector
 -- direction: string for left or right ("left", "right") 
-function bullet:new(pos, sp, flip)
+function bullet:new(pos, sp, hitbox, flip)
     local o = {}
     setmetatable(o, self)
     self.__index = self
@@ -823,24 +945,25 @@ function bullet:new(pos, sp, flip)
     o.origin = pos
     --shot distance
     o.distance = 50
+    self.hitbox = hitbox
 
     -- used for map collision
     o.w = 8
     o.h = 8
 
-    o.velocity = vector2d(1.5 * actor_direction(flip), 0)
+    o.vel = vector2d(1.5 * actor_direction(flip), 0)
     o.flip = flip
     return o 
 end
 
+
 function bullet:update()
-    self.pos += self.velocity
+    self.pos += self.vel
 end
 
 function bullet:draw()
     spr(self.sp, self.pos.x, self.pos.y, 1, 1, self.flip, false)
 end
-
 
 
 -->8
