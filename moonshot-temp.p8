@@ -370,6 +370,7 @@ function levelmanager:update()
     baddies_update(self.levels[i].baddies)
     p:update()
     bullets_update()
+    particle_update()
     c:update(p.pos.x, p.w)
 end
 
@@ -378,6 +379,7 @@ function levelmanager:draw()
     self.levels[i]:draw()
     baddies_draw(self.levels[i].baddies)
     bullets_draw()
+    particle_draw()
     p:draw()
 end
 
@@ -505,6 +507,8 @@ function baddies_update(baddies)
     for b in all(baddies) do
         b:update()
         if b.health <= 0 then
+        particle_death(b.pos)
+            particle_death(b.pos)
             del(baddies, b)
         end
     end
@@ -963,6 +967,65 @@ end
 
 function bullet:draw()
     spr(self.sp, self.pos.x, self.pos.y, 1, 1, self.flip, false)
+end
+
+
+-->8
+-- particles
+particles = {}
+
+-- add particles
+-- pos: position of particle vector2d
+-- t: type
+-- max_age: how long the particle should live
+particle={}
+function particle:new(pos, t, color, max_age, old_color)
+
+    local old_color = old_color or color
+
+    local o = {}
+    setmetatable(o, self)
+    self.__index = self
+
+    o.pos = pos
+    o.type = t
+    o.color = color
+    o.old_color = old_color
+    o.age = 0
+    o.max_age = max_age
+
+    return o
+end
+
+function particle_update()
+    for part in all(particles) do
+        -- make sure particles are not too old
+        part.age += 1
+
+        -- change color when its old
+        if part.age / part.max_age > 0.5 then
+            part.color = part.old_color
+        end
+
+        if part.age > part.max_age then
+            del(particles, part)
+        end
+    end
+end
+
+function particle_draw()
+    for part in all(particles) do
+        -- 1 pixel particle
+        if part.type == 0 then
+            pset(part.pos.x, part.pos.y, part.color)
+        end
+    end
+end
+
+-- create new death particle effect
+function particle_death(pos)
+    local part = particle:new(pos, 0, 8, 15+rnd(2))
+    add(particles, part)
 end
 
 
