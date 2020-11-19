@@ -98,9 +98,9 @@ function game:draw()
         if (btn(3)) key = key .. "down "
         if (btn(4)) key = key .. "x "
         if (btn(5)) key = key .. "o "
-        print("user input: " .. key, x, 7, 9)
-        print("position: " .. globals.debug_position, x, 14, 9)
-        print("velocity: " .. globals.debug_vel, x, 21, 9)
+        -- print("user input: " .. key, x, 7, 9)
+        -- print("position: " .. globals.debug_position, x, 14, 9)
+        -- print("velocity: " .. globals.debug_vel, x, 21, 9)
 
     end
 
@@ -354,9 +354,9 @@ function levelmanager:init()
     -- set camera
     c:init(m.map_start, m.map_end)
 
-    -- pos, sp, hitbox, health, bullet_sp, acc
+    -- pos, sp, hitbox, health, bullet_sp, bullet_distance, bullet_max_time, acc
     local level_baddies = {
-        baddie:new(vector2d(70, 70), 17, {x=0,y=0,w=8,h=8}, 3, 0, vector2d(1.5, 0))
+        baddie:new(vector2d(70, 70), 17, new_hitbox(0,0,8,8), 3, 0, 50, 30, vector2d(1.5, 0))
     }
 
     level_1:init(m, b, level_baddies)
@@ -532,24 +532,28 @@ baddie = {}
 -- health: starting health
 -- bullet_sp: sprite number for bullet
 -- acc: acceleration vector2d
-function baddie:new(pos, sp, hitbox, health, bullet_sp, acc)
+function baddie:new(pos, sp, hitbox, health, bullet_sp, bullet_distance, bullet_max_time, acc)
     local o = {}
     setmetatable(o, self)
     self.__index = self
 
-    self.sp = sp
-    self.bullet_sp = bullet_sp
-    self.hitbox = hitbox
-    self.w = 8
-    self.h = 8
-    self.pos = pos
-    self.health = health
-    self.flip = true
+    o.sp = sp
+    o.bullet_sp = bullet_sp
+    o.bullet_distance = bullet_distance
+    o.bullet_timer = 0
+    o.bullet_max_time = bullet_max_time
+    o.bullet_hitbox = new_hitbox(5,2,3,3)
+    o.hitbox = hitbox
+    o.w = 8
+    o.h = 8
+    o.pos = pos
+    o.health = health
+    o.flip = true
 
-    self.vel = vector2d(0, 0)
-    self.max_vel = vector2d(2, 2)
+    o.vel = vector2d(0, 0)
+    o.max_vel = vector2d(2, 2)
 
-    self.acc = acc
+    o.acc = acc
 
     return o 
 end
@@ -563,6 +567,9 @@ function baddie:update()
 
     collide_actor = actor_map_collision(self, "down", globals.actor)
 
+
+    self:shoot()
+
     -- check if hit by bullet
     for b in all(bullets) do
         if actor_collision(self, b) then
@@ -575,7 +582,55 @@ end
 
 function baddie:draw()
     spr(self.sp, self.pos.x, self.pos.y, 1, 1, self.flip, false)
+    if globals.debug then 
+        draw_hitbox(self.pos, self.hitbox, 9)
+        actor_collision_draw()
+    end
 end
+
+-- badie shoot
+function baddie:shoot()
+
+    -- globals.debug_var = self.hitbox
+    if self.bullet_timer <= self.bullet_max_time then
+        self.bullet_timer += 1
+        return
+    end
+    self.bullet_timer = 0
+
+    local dir = actor_direction(self)
+    -- if facing right
+    if dir == 1 then
+    -- if facing left
+    else
+        local p_x = p.pos.x + p.hitbox.x + p.hitbox.w + 1
+        local p_y = p.pos.y + p.hitbox.y + p.hitbox.h + 1
+        if p_x > self.pos.x - self.bullet_distance
+        and p_x - p.hitbox.x <= self.pos.x
+        and p_y > self.pos.y +  self.hitbox.h
+        then
+            -- TODO im tired, double check this
+            local dir = actor_direction(self)
+            local b_pos = vector2d() 
+            -- facing right
+            if actor_direction(self) == 1 then
+                b_pos = vector2d(self.pos.x + self.hitbox.x + self.hitbox.w + self.bullet_hitbox.x,
+                                 self.pos.y + 1)
+            -- facing left
+            else
+                local _box = hitbox_position(self.hitbox, actor_direction(flip))
+                local _b_box = hitbox_position(self.bullet_hitbox, actor_direction(flip))
+                -- b_pos = vector2d(self.pos.x - 4 - _b_box.x - _b_box.w,
+                b_pos = vector2d(self.pos.x - 10,
+                                 self.pos.y + 0)
+                -- b_pos = vector2d(self.pos.x - (self.bullet_hitbox.w + self.bullet_hitbox.x), self.pos.y)
+            end
+            local b = bullet:new(b_pos , 32, self.bullet_hitbox, 50, self.flip)
+            add(bullets, b)
+        end
+    end
+end
+
 
 -- actor_collision
 -- check collision between two actors
@@ -583,27 +638,38 @@ end
 -- a: actor 1
 -- b: actor 2
 -- returns true if collision, false otherwise
-function actor_collision(actor_1, actor_2)
+a = {x=0,y=0,w=0,h=0}
+b = {x=0,y=0,w=0,h=0}
+function actor_collision(actor_a, actor_b)
 
     -- local a = actor_1.hitbox
     -- local b = actor_2.hitbox
 
-    local a = {}
-    a.x = actor_1.pos.x + actor_1.hitbox.x
-    a.y = actor_1.pos.y + actor_1.hitbox.y
-    a.w = actor_1.hitbox.w
-    a.h = actor_1.hitbox.h
-    local b = {}
-    b.x = actor_1.pos.x + actor_1.hitbox.x
-    b.y = actor_1.pos.y + actor_1.hitbox.y
-    b.w = actor_1.hitbox.w
-    b.h = actor_1.hitbox.h
+    local dir_a = actor_direction(actor_a)
+    local dir_b = actor_direction(actor_b)
 
-    -- move hitbox to the correct position
-    a.x += actor_1.pos.x
-    a.y += actor_1.pos.y
-    b.x += actor_2.pos.x
-    b.y += actor_2.pos.y
+
+    -- position hitbox for actor a
+    -- facing right
+    if dir_a == 1 then
+        a = new_hitbox(actor_a.pos.x + actor_a.hitbox.x,
+            actor_a.pos.y + actor_a.hitbox.y, 
+            actor_a.hitbox.w, actor_a.hitbox.h)
+    else
+        local _a = hitbox_position(actor_a.hitbox)
+        a = new_hitbox(actor_a.pos.x + _a.x,
+            actor_a.pos.y + _a.y, _a.w, _a.h)
+    end
+    -- position hitbox for actor b
+    if dir_b == 1 then
+        b = new_hitbox(actor_b.pos.x + actor_b.hitbox.x,
+            actor_b.pos.y + actor_b.hitbox.y, 
+            actor_b.hitbox.w, actor_b.hitbox.h)
+    else
+        local _b = hitbox_position(actor_b.hitbox)
+        b = new_hitbox(actor_b.pos.x + _b.x,
+            actor_b.pos.y + _b.y, _b.w, _b.h)
+    end
 
     if a.x < b.x + b.w
     and a.x + a.w > b.x
@@ -612,6 +678,19 @@ function actor_collision(actor_1, actor_2)
         return true
     end
     return false
+end
+
+function actor_collision_draw()
+    local x1 = a.x
+    local x2 = a.x + a.w
+    local y1 = a.y
+    local y2 = a.y + a.h
+    rect(x1, y1, x2, y2, 3)
+    local x1 = b.x
+    local x2 = b.x + b.w
+    local y1 = b.y
+    local y2 = b.y + b.h
+    rect(x1, y1, x2, y2, 3)
 end
 
 
@@ -710,7 +789,12 @@ function player:init(x, y)
     self.health = 1
     self.lives = 3
 
-
+    self.hitbox = {
+        x = 1,
+        y = 1,
+        w = 7,
+        h = 7
+    }
     -- movement
     self.pos = vector2d(x, y)
 
@@ -778,7 +862,8 @@ end
 
 function player:shoot()
 
-    local b = bullet:new(self.pos, 32, {x=5,y=2,w=3,h=3}, self.flip)
+    -- todo make bullet distance a value in init
+    local b = bullet:new(self.pos, 32, new_hitbox(5,2,3,3), 50, self.flip)
     sfx(08)
     add(bullets, b)
 end
@@ -847,6 +932,9 @@ function player:draw()
     self:draw_lives()
     self:animate()
     spr(self.sp, self.pos.x, self.pos.y, 1, 1, self.flip, false)
+    if globals.debug then 
+        draw_hitbox(self.pos, self.hitbox, 2)
+    end
 end
 
 
@@ -930,6 +1018,11 @@ end
 function bullets_draw()
     for b in all(bullets) do
         b:draw()
+
+        if globals.debug then 
+            draw_hitbox(b.pos, b.hitbox, 7)
+        end
+
     end
 end
 
@@ -939,7 +1032,7 @@ bullet={}
 -- create a new bullets object
 -- pos: position vector
 -- direction: string for left or right ("left", "right") 
-function bullet:new(pos, sp, hitbox, flip)
+function bullet:new(pos, sp, hitbox, distance, flip)
     local o = {}
     setmetatable(o, self)
     self.__index = self
@@ -948,8 +1041,8 @@ function bullet:new(pos, sp, hitbox, flip)
     -- shot origin 
     o.origin = pos
     --shot distance
-    o.distance = 50
-    self.hitbox = hitbox
+    o.distance = distance
+    self.hitbox = hitbox_position(hitbox, actor_direction(flip))
 
     -- used for map collision
     o.w = 8
@@ -977,9 +1070,10 @@ particles = {}
 -- add particles
 -- pos: position of particle vector2d
 -- t: type
+-- color: array of colors
 -- max_age: how long the particle should live
 particle={}
-function particle:new(pos, t, color, max_age, old_color)
+function particle:new(pos, t, color, max_age)
 
     local old_color = old_color or color
 
@@ -1017,20 +1111,32 @@ function particle_draw()
     for part in all(particles) do
         -- 1 pixel particle
         if part.type == 0 then
-            pset(part.pos.x, part.pos.y, part.color)
+            pset(part.pos.x, part.pos.y, part.color[1])
         end
     end
 end
 
 -- create new death particle effect
 function particle_death(pos)
-    local part = particle:new(pos, 0, 8, 15+rnd(2))
+    local part = particle:new(pos, 0, {8}, 15+rnd(2))
     add(particles, part)
 end
 
 
 -->8
 -- utils
+
+-- draw hitbox
+-- pos: position vector
+-- h: hitbox
+-- c: color (int)
+function draw_hitbox(pos, h, c)
+    local x1 = pos.x + h.x 
+    local x2 = pos.x + h.x + h.w
+    local y1 = pos.y + h.y
+    local y2 = pos.y + h.y + h.h
+    rect(x1, y1, x2, y2, c)
+end
 
 -- vector
 -- vector in R2
@@ -1085,8 +1191,51 @@ function vector.__tostring(a)
     return "(".. a.x .. ", " .. a.y .. ")"
 end
 
-function vector.__concat(a, b) 
-    return tostring(a) .. tostring(b)
+function vector.__concat(s, t) 
+    return tostring(s) .. tostring(t)
+end
+
+-- hitbox
+hitbox = {}
+function new_hitbox(_x, _y, _w, _h)
+
+    local o = {}
+    setmetatable(o, hitbox)
+    o.x = _x or 0
+    o.y = _y or 0
+    o.w = _w or 8
+    o.h = _h or 8
+    return o 
+
+end
+
+-- determine the location of a hitbox
+-- returns a position hitbox
+-- actor: actor who has a hitbox and flip
+-- {x,y,w,h}
+function hitbox_position(b, dir)
+
+    local h = {}
+    h.w = b.w
+    h.h = b.h
+    if dir == 1 then
+    -- facing right
+        h.x = b.x
+        h.y = b.y
+    -- facing left
+    else
+        h.x = 7 - (b.w + b.x) 
+        h.y = 7 - (b.h + b.y) 
+    end
+    return h
+end
+
+function hitbox.__tostring(s)
+    return "{x: " .. s.x .. ", y: " .. s.y .. ",\n w: " .. s.w .. ", h: " .. s.h .. "}"
+end
+
+function hitbox.__concat(s, t) 
+    return tostring(s) .. tostring(t)
 end
 
 
