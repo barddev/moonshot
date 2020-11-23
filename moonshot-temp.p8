@@ -231,6 +231,7 @@ function gmap:new()
     self.__index = self
     -- integer for map start and end
     o.map_start = nil
+    o.start_limit = nil
     o.map_end = nil
     -- upper left corner column of region to draw
     o.x = nil
@@ -243,6 +244,7 @@ function gmap:init(map_start, map_end, map_x, map_y)
     local map_x = map_x or nil
     local map_y = map_x or nil
     self.map_start = map_start
+    self.start_limit = map_start
     self.map_end = map_end
     if map_x ~= nil
     and map_y ~= nil then
@@ -364,7 +366,7 @@ function levelmanager:init()
     p:init(20, 20)
 
     -- set camera
-    c:init(m.map_start, m.map_end)
+    c:init()
 
     -- pos, sp, hitbox, health, bullet_sp, bullet_distance, bullet_max_time, acc
     local level_baddies = {
@@ -516,10 +518,12 @@ function actor_move(actor)
     actor.pos += actor.vel
 
     --limit to map
-    if actor.pos.x < m.map_start then
-        actor.pos.x = m.map_start
+    if actor.pos.x < m.start_limit 
+    and actor.is_player then
+        actor.pos.x = m.start_limit
     end
-    if actor.pos.x > m.map_end - actor.w then
+    if actor.pos.x > m.map_end - actor.w 
+    and actor.is_player then
         actor.pos.x = m.map_end - actor.w
     end 
 
@@ -795,6 +799,7 @@ function player:new()
     o.w = 8
     o.h = 8
     self.vel = vector2d(0, 0)
+    self.is_player = true
 
     return o
 end
@@ -888,6 +893,9 @@ function player:death()
         -- TODO this needs adjusting
         p.pos = vector2d(20, 20)
     end
+
+    -- reset map limiting
+    m.start_limit = m.map_start
 end
 
 function player:shoot()
@@ -987,16 +995,11 @@ function cam:new()
     local o = {}
     setmetatable(o, self)
     self.__index = self
-    o.x = nil 
-    o.map_start = nil
-    o.map_end = nil 
     return o 
 end
 
-function cam:init(map_start, map_end)
+function cam:init(_map)
     self.x = 0 
-    self.map_start = map_start
-    self.map_end = map_end 
 end
 
 -- update camera location give a players x position and the players width
@@ -1004,15 +1007,17 @@ function cam:update(player_x, player_w)
     -- camera follows player
     self.x = player_x - 64 + (player_w / 2)
 
-    -- left end of camera doesnt move past start
-    if (self.x < self.map_start) then
-        self.x = self.map_start
+    -- end a gamescreen early from end
+    if self.x > m.map_end - 128 then
+        self.x = m.map_end - 128
+        m.start_limit = m.map_end - 128
     end
 
-    -- end a gamescreen early from end
-    if self.x > self.map_end - 128 then
-        self.x = self.map_end - 128
+    -- left end of camera doesnt move past start
+    if (self.x < m.start_limit) then
+        self.x = m.start_limit
     end
+
 
     camera(self.x, 0)
 
