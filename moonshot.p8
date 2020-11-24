@@ -1,387 +1,1322 @@
 pico-8 cartridge // http://www.pico-8.com
 version 29
 __lua__
---declare variables, initalize, and start game loop
+-- main
+-- contains pico-8 main functions
 
--- less confusing control buttons
-btn_left=0
-btn_right=1
-btn_up=2
-btn_down=3
-btn_o=4
-btn_x=5
-
-screen={
-  h=128,
-  w=128,
-}
-
---game physics values
-gravity=0.10
-friction=0.425
-  
 function _init()
-  stars_init(screen.w,screen.h,32)
-  ticker=0
-  --start music
-  music(0)
-  --map information
-  map_x=0
-  map_y=0
-
-  map_start=0
-  map_end=256
-	 
-	 
-  --game functions
-  game={
-    update=menu_update,
-    draw=menu_draw,
-  }
-  
-  --camera
-  cam_x=0
-  
-  --player
-  p={
-    --sprite
-    sp=2,
-    --animation timing
-    anim=0,
-    --sprite x position
-    x=64,
-    --sprite y position
-    y=64,
-    --flip sprit horizontal
-    flp=false,
-    --sprite width/height in pixel
-    w=8,
-    h=8,
-    --player x speed
-    dx=0,
-    max_dx=1,
-    acc_x=0.25,
-    --player y speed
-    dy=0,
-    max_dy=1.5,
-    acc_y=2,
-    --player states
-    --idle, running, jumping, falling
-    state="idle",
-    --jumping
-    jump_press=0,
-    jump_press_time=0.2,
-    grounded_press=0,
-    grounded_press_time=0.25,
-    grounded=false
-  }
+    p = player:new()
+    c = cam:new()
+    g = game:new()
+    m = gmap:new()
+    g:init()
 end
 
 function _update60()
-  --todo move this to menu
-  ticker+=0.5
-  game.update()
+    g:update()
 end
 
 function _draw()
-  game.draw()
+    cls()
+    g:draw()
 end
+
 -->8
---menu
+-- globals
+-- contains any globally used defintions outside of objects
+-- that have their own tab.
 
-function menu_update()
-  if btn(btn_x) then
-    game.init=game_init
-    game.update=game_update
-    game.draw=game_draw
-    game.init()
-  end
-end
+globals = {
 
-function menu_draw()
-  cls()
-  stars_draw()
-  print("press ❎ to play", 60, 60)
-end
+    -- application
+    title = "moonshot",
+    version = "0.0.0",
+
+    -- debugging 
+    debug = true,
+    -- gengeral purpose debug variable
+    debug_var = "",
+    -- vector2d
+    debug_position = "",
+    debug_vel = "",
+
+    debug_hitbox = "",
+    debug_collision = "",
+
+    -- stars 
+    stars_color_pal={1,2,9,12,13},
+
+    -- physics
+    grav = 0.05,
+    friction = 0.425,
+
+    -- sprite flags
+    solid = 0,
+    egg = 3,
+    spike = 5,
+    bullet = 6
+
+}
+
 -->8
---game
---the main game
+-- game
+game = {}
 
-function game_init()
-  stars_init(map_end,screen.h,100)
+-- initalize game object
+function game:new()
+    local o={}
+    setmetatable(o, self)
+    self.__index = self
+    -- state: a table with new/init/update/draw functions
+    o.state = nil
+    return o
 end
 
-function game_update()
- 
- egg_update()
- player_update()
- player_animate()
- 
- background_update() 
- cam_update()
-end
+-- game:init
+-- Calling this function will start the game over at menu screen
+-- start with menu state
+function game:init()
+    self:change_state(menu)
 
-function game_draw()
-  cls()
-  stars_draw()
-  background_draw()
-  map(0,0)
-  egg_draw()
-  player_draw()
-end
--->8
---collide
-
--- collide_map
--- check if there is a collision between an object and a sprite
--- obj: table x,y,w,h
--- aim: direction,left,right,up,down
--- flag: sprite flag type
-function collide_map(obj,aim,flag)
-  
-  local x=obj.x  local y=obj.y
-  local w=obj.w  local h=obj.h
-  
-  local x1=0  local y1=0
-  local x2=0  local y2=0
-  
-  if aim=="left" then
-    x1=x-1  y1=y
-    x2=x    y2=y+h-1
-    
-  elseif aim=="right" then
-    x1=x+w-1  y1=y
-    x2=x+w    y2=y+h-1
-    
-  elseif aim=="up" then
-    x1=x+2    y1=y-1
-    x2=x+w-3  y2=y
-    
-  elseif aim=="down" then
-    x1=x+2    y1=y+h
-    x2=x+w-3  y2=y+h
-  end
-  x1/=8  y1/=8
-  x2/=8  y2/=8
-  
-  if fget(mget(x1,y1),flag) 
-  or fget(mget(x1,y2),flag) 
-  or fget(mget(x2,y1),flag) 
-  or fget(mget(x2,y2),flag) then
-    return true
-  end
-  
-  return false 
-end
--->8
---player
-
-function player_update()
-
-  --physics
-  p.dy+=gravity
-  p.dx*=friction
-  
-  if btn(btn_left) then
-    p.dx-=p.acc_x
-    p.flp=true
-  end
-  if btn(btn_right) then
-    p.dx+=p.acc_x
-    p.flp=false
-  end
-  
-  --todo revisit this
-  --and add variable jumping
-  --add buffered jumping
-  p.grounded_press-=0.017
-  if p.grounded then
-    p.grounded_press=p.grounded_press_time
-  end
---   p.jump_press-=60
-  p.jump_press-=0.017
-  if btnp(btn_x) then
-    p.jump_press=p.jump_press_time
-  end
-  
-  if p.jump_press>0
-  and p.grounded_press>0 then
-    sfx(00)
-    p.jump_press=0
-    p.grounded_press=0
-    p.grounded=false
-    p.dy-=p.acc_y
-  end
-  
-  --check y direction
-  if p.dy>0 then
-    p.state="falling"
-    
-    --limit speed
-    p.dy=mid(-p.max_dy, p.dy, p.max_dy)
-    
-    if collide_map(p,"down",0) then
-      p.grounded=true
-      if btn(btn_left)
-      or btn(btn_right) then
-        p.state="running"
-      else
-        p.state="idle"
-      end
-      p.dy=0
-      p.y-=((p.y+p.h+1)%8)-1
+    if globals.debug then
+        poke(0x5f2d, 1)
     end
-  elseif p.dy<0 then
-    p.state="jumping"
-    if collide_map(p,"up",0) then
-      p.dy=0
-    end
-  end
 
-  --check x direction  
-  if p.dx<0 then
-    
-    --limit player to max speed
-    p.dx=mid(-p.max_dx, p.dx, p.max_dx)
-    
-    if collide_map(p,"left",0) then
-      p.dx=0
-    end
-  elseif p.dx>0 then
-    --limit player to max speed
-    p.dx=mid(-p.max_dx, p.dx, p.max_dx)
-  
-    if collide_map(p,"right",0) then
-      p.dx=0
-    end
-  end  
- 
-  p.x+=p.dx
-  p.y+=p.dy
-  
-  --limit to map
-  if p.x<map_start then
-    p.x=map_start
-  end
-  if p.x>map_end-p.w then
-    p.x=map_end-p.w
-  end 
-  
 end
 
-function player_animate()
-  if p.state=="jumping" then
-   p.sp=6
-  elseif p.state=="running" then
-    if time()-p.anim>.1 then
-      p.anim=time()
-      p.sp+=1
-      if p.sp>5 then
-        p.sp=2
-      end
-    end
-  else --player idle
-      p.sp=3
-  end
+function game:update()
+    self.state:update()
 end
 
-function player_draw()
-  spr(p.sp,p.x,p.y,1,1,p.flp,false)
+function game:draw()
+    -- cls()
+    self.state:draw()
+
+    if globals.debug then
+
+        local x = c.x or 0
+
+        -- debug var
+        -- print("debug var: " .. globals.debug_var, x, 0, 9)
+        print("debug hitbox: " .. new_hitbox(), x, 0, 9)
+        -- print("debug collision: " .. globals.debug_collision, x, 14, 9)
+
+        -- user input
+        local key = ""
+        if (btn(0)) key = key .. "left "
+        if (btn(1)) key = key .. "right "
+        if (btn(2)) key = key .. "up "
+        if (btn(3)) key = key .. "down "
+        if (btn(4)) key = key .. "x "
+        if (btn(5)) key = key .. "o "
+        -- print("user input: " .. key, x, 7, 9)
+        -- print("position: " .. globals.debug_position, x, 14, 9)
+        -- print("velocity: " .. globals.debug_vel, x, 21, 9)
+
+
+    end
+
+end
+
+-- game:change_state
+-- change to a new state
+-- takes in a table with new/init/update/draw functions
+function game:change_state(state)
+    self.state = state:new()
+    self.state:init()
 end
 
 
 -->8
---camera
-function cam_update()
-  
-  --camera follows player
-  cam_x=p.x-64+(p.w/2)
-  if cam_x<map_start then
-    cam_x=map_start
-  end
-  --end a gamescreen early from end
-  if cam_x>map_end-128 then
-    cam_x=map_end-128
-  end
-  camera(cam_x,0)
+-- menu
+menu = {}
+
+function menu:new()
+    local o={}
+    setmetatable(o, self)
+    self.__index = self
+    -- background object
+    o.background = background:new()
+    return o
 end
+
+-- menu:init
+-- reset menu screen
+function menu:init()
+    -- map is just blank screen
+    m:init(0, 128)
+    c:init(m.map_start, m.map_end)
+    self.background:init(self.map)
+    music(0)
+end
+
+-- menu:update
+-- check if player wants to start
+function  menu:update()
+    c:update(0, 0)
+    if btnp(4) then
+        -- start playing level 1
+        g:change_state(levelmanager)
+    end
+end
+
+-- menu:draw
+-- draw menu screen
+function  menu:draw()
+    self.background:draw()
+    print("press ❎", 50, 80, 7)
+    print("deejay paredi", 41, 100, 5)
+    print("patrick messina", 37, 106, 5)
+    print("bard development", 0, 120, 5)
+    print(globals.version, 109, 120, 5)
+end
+
 -->8
---backgroud
+-- game over 
+game_over = {}
 
-
-function background_update()
+function game_over:new()
+    local o={}
+    setmetatable(o, self)
+    self.__index = self
+    -- background object
+    o.background = background:new()
+    return o
 end
 
-function background_draw()
+-- game_over:init
+-- reset game_over screen
+function game_over:init(win)
+    self.win = win or false
+    -- map is just blank screen
+    m:init(0, 128)
+    self.background:init(self.map)
+    music(0)
 end
+
+-- game_over:update
+-- check if player wants to start
+function  game_over:update()
+    c:update(0, 0)
+    if btnp(4) then
+        -- start playing level 1
+        g:change_state(menu)
+    end
+end
+
+-- game_over:draw
+function  game_over:draw()
+    self.background:draw()
+    if p.lives > 0 then
+        print("you win!", 60, 60)
+    else
+        print("you lose, loser.", 60, 60)
+    end
+    print("press ❎", 50, 80, 7)
+end
+
+
+
+
 -->8
---stars
+-- gmap
+-- game map
+gmap = {}
 
-stars={}
-stars_color_pal={1,2,9,12,13}
+-- gmap:new
+-- create a new game map
+function gmap:new()
+    local o = {}
+    setmetatable(o, self)
+    self.__index = self
+    -- integer for map start and end
+    o.map_start = nil
+    o.start_limit = nil
+    o.map_end = nil
+    -- upper left corner column of region to draw
+    o.x = nil
+    -- upper left corner row of region to draw
+    o.y = nil
+    return o 
+end
 
-function stars_init(w,h,num)
-  stars={}
+function gmap:init(map_start, map_end, map_x, map_y)
+    local map_x = map_x or nil
+    local map_y = map_x or nil
+    self.map_start = map_start
+    self.start_limit = map_start
+    self.map_end = map_end
+    if map_x ~= nil
+    and map_y ~= nil then
+        self.x = map_x
+        self.y = map_y
+    end
+end
+
+-- update map
+function gmap:update()
+end
+
+function gmap:draw()
+    if map_x ~= nil
+    and map_y ~= nil then
+        map(self.x, self.y)
+    end
+end
+
+-->8
+-- background
+-- handle background elements
+-- stars draws stars randomly placed
+
+background = {}
+
+-- background:new
+-- create a new background object
+function background:new()
+    local o = {}
+    setmetatable(o, self)
+    self.__index = self
+    -- array of stars
+    o.stars = nil
+    return o 
+end
+
+-- background:init
+-- m: map object
+-- s: stars bool, default is true
+-- sperc: percentage of stars for the map default 5%
+function background:init(stars, sperc)
+
+    local stars = stars or true
+    local sperc = sperc or 0.05
+
+    if stars then
+        self.stars = self:stars_init(sperc)
+    end
+
+end
+
+-- stars
+-- m: map object
+-- perc: percentage of stars for the creen
+-- todo: handle different screen hights
+function background:stars_init(perc)
+
+  local perc = perc or 0.05
+  local stars={}
+  local num = (128 * perc) * (m.map_end * perc)
   
   for i=1,num do
     s={}
-    s.x=rnd(w)
-    s.y=rnd(h)
-    s.color=stars_color_pal[flr(rnd(count(stars_color_pal)))+1]
-    s.size=rnd(2)
-    add(stars,s)
+    s.x=rnd(m.map_end)
+    s.y=rnd(128)
+    s.color=globals.stars_color_pal[
+        flr(rnd(count(globals.stars_color_pal)))+1]
+    s.size=flr(rnd(2))
+    add(stars, s)
   end
+
+  return stars
 end
 
-function stars_draw()
- for s in all(stars) do
-   circfill(flr(s.x),s.y,s.size,s.color)
- end
+function background:stars_draw()
+    for s in all(self.stars) do
+        local x = flr(s.x)
+        local y = flr(s.y)
+        rectfill(x, y, x+s.size, y+s.size, s.color)
+    end
 end
+
+function background:update()
+end
+
+function background:draw()
+    self:stars_draw()
+end
+
 -->8
---egg
-
---egg,list of eggs
-eggs={}
-
---egg values should be here
-egg={
-  --sprite number
-  sp=16,
-  --
-  --animation timing
-  anim=0,
-  --sprite x position
-  x=50,
-  --sprite y position
-  y=85,
-  --sprite width/height in pixel
-  w=8,
-  h=8,
-  --player y speed
-  dy=0,
-  acc_y=2,
-  dir=1,
-  anim=0
-}
-
-function egg_init()
+-- levelmanager
+levelmanager = {}
+function levelmanager:new()
+    local o = {}
+    setmetatable(o, self)
+    self.__index = self
+    -- array of levels
+    o.levels = nil
+    -- level index
+    o.index = nil
+    return o 
 end
 
-function egg_update()
-  egg_animate(egg)
+function levelmanager:init()
+
+    self.levels = {}
+    self.index = 1
+
+
+    -- create level 1
+
+    m:init(0, 1024, 0, 0)
+    local level_1 = level:new()
+    local b = background:new()
+    b:init()
+
+    -- reset player
+    p:init(20, 20)
+
+    -- set camera
+    c:init()
+
+    -- pos, sp, hitbox, health, bullet_sp, bullet_distance, bullet_max_time, acc
+    local level_baddies = {
+        baddie:new(vector2d(70, 70), 17, new_hitbox(0,0,7,7), 3, 0, 50, 30, vector2d(1.5, 0))
+    }
+
+    level_1_eggs = {}
+    add(level_1_eggs, egg:new(vector2d(295, 53)))
+    level_1:init(m, b, level_baddies, level_1_eggs)
+    add(self.levels, level_1)
+
 end
 
-function egg_draw()
-  spr(egg.sp,egg.x,egg.y)
+function levelmanager:update()
+    local i = self.index
+    self.levels[i]:update()
+    baddies_update(self.levels[i].baddies)
+    p:update()
+    bullets_update()
+    particle_update()
+    c:update(p.pos.x, p.w)
 end
 
-function egg_animate(e)
-  if time()-e.anim>.3 then
-    e.anim=time()
-    e.dir*=-1
-    e.y+=e.dir
+function levelmanager:draw()
+    local i = self.index
+    self.levels[i]:draw()
+    baddies_draw(self.levels[i].baddies)
+    bullets_draw()
+    particle_draw()
+    p:draw()
+end
+
+-->8
+-- level
+
+level={}
+function level:new()
+    local o = {}
+    setmetatable(o, self)
+    self.__index = self
+    -- gmap object
+    o.map = nil
+    -- background object
+    o.background = nil
+    return o 
+end
+
+function level:init(m, b, badguys, level_eggs)
+    self.background = b
+    self.baddies = badguys
+    self.eggs = level_eggs
+    eggs = level_eggs
+    -- music(1)
+end
+
+function level:update()
+    for e in all(self.eggs) do
+        e:update()
+    end
+end
+
+function level:draw()
+    self.background:draw()
+    for e in all(self.eggs) do
+        e:draw()
+    end
+    map(self.map_x, self.max_y)
+end
+
+-->8
+-- actor
+
+-- actor direction determines if actor is moving left or right
+-- actor direction determines if actor is moving left or right
+-- returns 1 if moving right, and returns -1 if moving left
+-- assumes sprite is facing right and actor has var flip 
+function actor_direction(flip)
+    if (flip) then
+        return -1
+    end
+    return 1
+end
+
+-- actor_move
+-- moves actor on screen and checks for collisions
+-- actor requires
+--  state: with falling/running/jumping/idle
+--  position: vector2d
+--  vel: vector2d
+function actor_move(actor)
+    -- check y direction
+    if actor.vel.y > 0 then
+        actor.state = "falling"
+
+        -- if player falls off the map
+        if actor.pos.y > m.y + 128 then
+            actor.health -= actor.health
+            return
+        end
+
+        -- limit actor to max speed
+        actor.vel.y = mid(-actor.max_vel.y, actor.vel.y, actor.max_vel.y)
+
+        if actor_map_collision(actor, "down", globals.solid) then
+            actor.grounded = true
+
+            -- left/right movement
+            if btn(0)
+            or btn(1) then
+                actor.state = "running"
+            else
+                actor.state = "idle"
+            end
+            actor.vel.y = 0
+            actor.pos.y -= ((actor.pos.y + actor.h + 1) % 8) - 1
+        end
+
+        if actor_map_collision(actor, "down", globals.spike) 
+        or actor_map_collision(actor, "up", globals.spike) 
+        or actor_map_collision(actor, "right", globals.spike) 
+        or actor_map_collision(actor, "left", globals.spike) then
+            actor.vel.y = 0
+            actor.health -= actor.health
+        end
+
+    elseif actor.vel.y < 0 then
+        actor.state = "jumping"
+        if actor_map_collision(actor, "up", globals.solid) then
+            actor.vel.y = 0
+        end
+    end
+
+    -- check x direction
+    -- left movement
+    if actor.vel.x < 0 then
+        -- limit actor to max speed
+        actor.vel.x = mid(-actor.max_vel.x, actor.vel.x, actor.max_vel.x)
+        if actor_map_collision(actor, "left", globals.solid) then
+            actor.vel.x = 0
+        end
+    -- right movement
+    elseif actor.vel.x > 0 then
+        actor.vel.x = mid(-actor.max_vel.x, actor.vel.x, actor.max_vel.x)
+        if actor_map_collision(actor, "right", globals.solid) then
+            actor.vel.x = 0
+        end
+    end
+
+    actor.pos += actor.vel
+
+    --limit to map
+    if actor.pos.x < m.start_limit 
+    and actor.is_player then
+        actor.pos.x = m.start_limit
+    end
+    if actor.pos.x > m.map_end - actor.w 
+    and actor.is_player then
+        actor.pos.x = m.map_end - actor.w
+    end 
+
+
+end
+
+
+-->8
+-- baddie
+
+function baddies_update(baddies)
+    for b in all(baddies) do
+        b:update()
+        if b.health <= 0 then
+        particle_death(b.pos)
+            particle_death(b.pos)
+            del(baddies, b)
+        end
+    end
+end
+
+function baddies_draw(baddies)
+    for b in all(baddies) do
+        b:draw()
+    end
+end
+
+
+
+baddie = {}
+
+-- baddie:new
+-- initalize an enemy
+-- sp: sprite number of enemy
+-- pos: vector2d start position 
+-- hitbox: hitbox table
+-- health: starting health
+-- bullet_sp: sprite number for bullet
+-- acc: acceleration vector2d
+function baddie:new(pos, sp, hitbox, health, bullet_sp, bullet_distance, bullet_max_time, acc)
+    local o = {}
+    setmetatable(o, self)
+    self.__index = self
+
+    o.sp = sp
+    o.bullet_sp = bullet_sp
+    o.bullet_distance = bullet_distance
+    o.bullet_timer = 0
+    o.bullet_max_time = bullet_max_time
+    o.bullet_hitbox = new_hitbox(5,2,3,3)
+    o.hitbox = hitbox
+    o.w = 8
+    o.h = 8
+    o.pos = pos
+    o.health = health
+    o.flip = true
+
+    o.vel = vector2d(0, 0)
+    o.max_vel = vector2d(2, 2)
+
+    o.acc = acc
+
+    return o 
+end
+
+function baddie:update()
+    -- TODO see why this is so slow
+    self.vel.y += globals.grav
+    self.vel.x *= globals.friction
+
+    actor_move(self)
+
+    collide_actor = actor_map_collision(self, "down", globals.actor)
+
+
+    self:shoot()
+
+    -- check if hit by bullet
+    for b in all(bullets) do
+        if actor_collision(b, self) then
+            self.health -= 1
+            del(bullets, b)
+        end
+    end
+
+end
+
+function baddie:draw()
+    spr(self.sp, self.pos.x, self.pos.y, 1, 1, self.flip, false)
+    if globals.debug then 
+        draw_hitbox(self.pos, self.hitbox, 9)
+        actor_collision_draw()
+    end
+end
+
+-- badie shoot
+function baddie:shoot()
+
+    -- globals.debug_var = self.hitbox
+    if self.bullet_timer <= self.bullet_max_time then
+        self.bullet_timer += 1
+        return
+    end
+    self.bullet_timer = 0
+
+    local dir = actor_direction(self)
+    -- if facing right
+    if dir == 1 then
+    -- if facing left
+    else
+        local p_x = p.pos.x + p.hitbox.x + p.hitbox.w + 1
+        local p_y = p.pos.y + p.hitbox.y + p.hitbox.h + 1
+        if p_x > self.pos.x - self.bullet_distance
+        and p_x - p.hitbox.x <= self.pos.x
+        and p_y > self.pos.y +  self.hitbox.h
+        then
+            -- TODO im tired, double check this
+            local dir = actor_direction(self)
+            local b_pos = vector2d() 
+            -- facing right
+            if actor_direction(self) == 1 then
+                b_pos = vector2d(self.pos.x + self.hitbox.x + self.hitbox.w + self.bullet_hitbox.x,
+                                 self.pos.y + 1)
+            -- facing left
+            else
+                local _box = hitbox_position(self.hitbox, actor_direction(flip))
+                local _b_box = hitbox_position(self.bullet_hitbox, actor_direction(flip))
+                -- b_pos = vector2d(self.pos.x - 4 - _b_box.x - _b_box.w,
+                b_pos = vector2d(self.pos.x - 10,
+                                 self.pos.y + 0)
+                -- b_pos = vector2d(self.pos.x - (self.bullet_hitbox.w + self.bullet_hitbox.x), self.pos.y)
+            end
+            local b = bullet:new(b_pos , 32, self.bullet_hitbox, 50, self.flip)
+            add(bullets, b)
+        end
+    end
+end
+
+
+-- actor_collision
+-- check collision between two actors
+-- requires a hitbox
+-- a: actor 1
+-- b: actor 2
+-- returns true if collision, false otherwise
+a = {x=0,y=0,w=0,h=0}
+b = {x=0,y=0,w=0,h=0}
+function actor_collision(actor_a, actor_b)
+    a = {x=0,y=0,w=0,h=0}
+    b = {x=0,y=0,w=0,h=0}
+
+    -- local a = actor_1.hitbox
+    -- local b = actor_2.hitbox
+
+    globals.debug_collision = actor_a.hitbox
+    local dir_a = actor_direction(actor_a)
+    local dir_b = actor_direction(actor_b)
+
+
+    -- position hitbox for actor a
+    -- facing right
+    if dir_a == 1 then
+        a = new_hitbox(actor_a.pos.x + actor_a.hitbox.x,
+            actor_a.pos.y + actor_a.hitbox.y, 
+            actor_a.hitbox.w, actor_a.hitbox.h)
+    else
+        local _a = hitbox_position(actor_a.hitbox, dir_b)
+        a = new_hitbox(actor_a.pos.x + _a.x + _a.w,
+            actor_a.pos.y + _a.y, _a.w, _a.h)
+    end
+    -- position hitbox for actor b
+    if dir_b == 1 then
+        b = new_hitbox(actor_b.pos.x + actor_b.hitbox.x,
+            actor_b.pos.y + actor_b.hitbox.y, 
+            actor_b.hitbox.w, actor_b.hitbox.h)
+    else
+        local _b = hitbox_position(actor_b.hitbox, dir_b)
+        b = new_hitbox(actor_b.pos.x + _b.x,
+            actor_b.pos.y + _b.y, _b.w, _b.h)
+    end
+
+    if a.x < b.x + b.w
+    and a.x + a.w > b.x
+    and a.y < b.y + b.h
+    and a.y + a.h > b.y then
+        return true
+    end
+    return false
+end
+
+function actor_collision_draw()
+    local x1 = a.x
+    local x2 = a.x + a.w
+    local y1 = a.y
+    local y2 = a.y + a.h
+    rect(x1, y1, x2, y2, 3)
+    local x1 = b.x
+    local x2 = b.x + b.w
+    local y1 = b.y
+    local y2 = b.y + b.h
+    rect(x1, y1, x2, y2, 3)
+end
+
+
+-- actor_map_collision
+-- check if there is a collision between an object and a sprite
+-- actor: table x,y,w,h 
+-- direction with left,right,up,down as options
+-- flag: sprite flag type
+-- returns: bool
+function actor_map_collision(actor, direction, flag)
+
+    local x=actor.pos.x  local y=actor.pos.y
+    local w=actor.w  local h=actor.h
+  
+    local x1=0  local y1=0
+    local x2=0  local y2=0
+  
+    if direction == "left" then
+        x1 = x - 1 
+        y1 = y
+        x2 = x
+        y2 = y + h - 1
+        
+    elseif direction == "right" then
+        x1 = x + w - 1
+        y1 = y
+        x2 = x + w
+        y2 = y + h - 1
+        
+    elseif direction == "up" then
+        x1 = x + 2
+        y1 = y - 1
+        x2 = x + w - 3
+        y2 = y
+        
+    elseif direction == "down" then
+        x1 = x + 2
+        y1 = y + h
+        x2 = x + w - 3
+        y2 = y + h
+    end
+    -- sprites are 8 pixels
+    x1 /= 8
+    y1 /= 8
+    x2 /= 8
+    y2 /= 8
+  
+    if fget(mget(x1,y1),flag) 
+    or fget(mget(x1,y2),flag) 
+    or fget(mget(x2,y1),flag) 
+    or fget(mget(x2,y2),flag) then
+        return true
+    end
+    
+    return false 
+
+end
+
+
+-->8
+-- player
+
+player={}
+
+function player:new()
+    local o={}
+    setmetatable(o, self)
+    self.__index = self
+    -- sprite number
+    o.sp = 2
+    -- width/height of sprite
+    o.w = 8
+    o.h = 8
+    self.vel = vector2d(0, 0)
+    self.is_player = true
+
+    return o
+end
+
+-- player:init
+-- player start position x,y
+-- m gmap object
+function player:init(x, y)
+
+    -- sprite number
+    self.sp = 2
+    self.w = 8
+    self.h = 8
+    self.flip = false
+    self.anim = 0
+
+    -- state
+    -- falling/running/jumping/idle
+    self.state = "falling"
+
+    -- health stuff
+    self.health = 1
+    self.lives = 3
+
+    self.hitbox = {
+        x = 1,
+        y = 0,
+        w = 6,
+        h = 7
+    }
+    -- movement
+    self.pos = vector2d(x, y)
+
+    self.vel = vector2d(0, 0)
+    self.max_vel = vector2d(2, 2)
+
+    self.acc = vector2d(0.5, 2.2)
+    self.dcc = vector2d(0.8, 0)
+    self.dcc_air = vector2d(1.5, 0)
+
+    -- jumping
+    self.jump_hold = globals.grav
+
+    -- check if almost touch ground
+    self.jump_press = 0
+    self.jump_press_time = 0.2
+
+    self.grounded_press = 0
+    self.grounded_press_time = 0.25
+    self.grounded = false
+
+  
+end
+
+function player:draw_lives()
+    spr(48, c.x + 110)
+    print("x" .. self.lives, c.x + 120, 0, 9)
+end
+
+function player:animate()
+  if self.state == "jumping" then
+   self.sp = 6
+  elseif self.state == "running" then
+    if time() - self.anim > .1 then
+      self.anim=time()
+      self.sp += 1
+      if self.sp > 5 then
+        self.sp = 2
+      end
+    end
+  else --player idle
+      self.sp = 3
   end
+end
+
+function player:jump()
+    sfx(00)
+    self.jump_press = 0
+    self.grounded_press = 0
+    self.grounded = false
+
+    self.vel.y -= p.acc.y 
+end
+
+function player:death()
+    self.lives -= 1
+    self.health = 1
+    if self.lives <= 0 then
+        g:change_state(game_over)
+    else
+        -- TODO this needs adjusting
+        p.pos = vector2d(20, 20)
+    end
+
+    -- reset map limiting
+    m.start_limit = m.map_start
+end
+
+function player:shoot()
+
+    -- todo make bullet distance a value in init
+    local b = bullet:new(self.pos, 32, new_hitbox(5,2,3,3), 50, self.flip)
+    sfx(10)
+    add(bullets, b)
+end
+
+function player:update()
+
+    globals.debug_position = self.pos
+
+    self.vel.x *= globals.friction 
+    self.vel.y += globals.grav + self.jump_hold
+
+    -- shooting
+    if (btnp(4)) self:shoot()
+
+    -- left
+    if btn(0) then
+        self.vel.x -= self.acc.x
+        self.flip = true
+    -- right
+    elseif btn(1) then
+        self.vel.x += self.acc.x
+        self.flip = false
+    -- allow a minor delay before changing directions/stopping
+    else
+        if self.grounded then
+            self.vel.x *= self.dcc.x
+        else
+            self.vel.x *= self.dcc_air.x
+        end
+    end
+
+    
+    -- jumping
+    self.grounded_press -= 1/60
+    if self.grounded then
+        self.grounded_press = self.grounded_press_time
+    end
+    self.jump_press -= 1/60
+
+    if btnp(5) then
+        self.jump_press = self.jump_press_time
+    end
+    -- h check for how long jump is press
+    if btn(5) then
+        self.jump_hold -= 0.005
+        if (self.jump_hold < 0) self.jump_hold = 0
+    else
+        self.jump_hold = globals.grav
+    end
+
+    if self.jump_press > 0
+    and self.grounded_press > 0 then
+        self:jump()
+    end
+
+    globals.debug_vel = self.vel
+    actor_move(self)
+
+    -- check picking up egg
+    for e in all(eggs) do
+        if actor_collision(e, self) then
+            del(eggs, e)
+        end
+    end
+
+    if self.health <= 0 then
+        self:death()
+    end
+
+end
+
+function player:draw()
+    self:draw_lives()
+    self:animate()
+    spr(self.sp, self.pos.x, self.pos.y, 1, 1, self.flip, false)
+    if globals.debug then 
+        draw_hitbox(self.pos, self.hitbox, 2)
+    end
+end
+
+
+-->8
+-- actors
+
+-->8
+-- camera
+cam={}
+
+-- create a new camera, map_end is the end of the camera
+function cam:new()
+    local o = {}
+    setmetatable(o, self)
+    self.__index = self
+    return o 
+end
+
+function cam:init(_map)
+    self.x = 0 
+end
+
+-- update camera location give a players x position and the players width
+function cam:update(player_x, player_w)
+    -- camera follows player
+    self.x = player_x - 64 + (player_w / 2)
+
+    -- end a gamescreen early from end
+    if self.x > m.map_end - 128 then
+        self.x = m.map_end - 128
+        m.start_limit = m.map_end - 128
+    end
+
+    -- left end of camera doesnt move past start
+    if (self.x < m.start_limit) then
+        self.x = m.start_limit
+    end
+
+
+    camera(self.x, 0)
+
+end
+
+function cam:reset()
+    camera()
+end
+
+-->8
+-- bullets
+
+-- array of all bullets
+bullets={}
+function bullets_update()
+    for b in all(bullets) do
+        b:update()
+
+        local del_bullet = false
+
+        if b.pos.x < b.origin.x - b.distance 
+        or b.pos.x > b.origin.x + b.distance 
+        or b.pos.x < 0 then
+            del_bullet = true
+        end
+
+        -- assumes sprite faces right
+        local direction = "right"
+        if (b.flip) direction = "left"
+        collide_wall = actor_map_collision(b, direction, globals.solid)
+        if collide_wall then
+            del_bullet = true
+        end
+
+        if (del_bullet) del(bullets, b)
+
+    end
+end
+
+function bullets_draw()
+    for b in all(bullets) do
+        b:draw()
+
+        if globals.debug then 
+            draw_hitbox(b.pos, b.hitbox, 7)
+        end
+
+    end
+end
+
+-- actual bullet obj
+bullet={}
+
+-- create a new bullets object
+-- pos: position vector
+-- direction: string for left or right ("left", "right") 
+function bullet:new(pos, sp, hitbox, distance, flip)
+    local o = {}
+    setmetatable(o, self)
+    self.__index = self
+    o.sp = 32
+    o.pos = pos
+    -- shot origin 
+    o.origin = pos
+    --shot distance
+    o.distance = distance
+    self.hitbox = hitbox_position(hitbox, actor_direction(flip))
+
+    -- used for map collision
+    o.w = 8
+    o.h = 8
+
+    o.vel = vector2d(1.5 * actor_direction(flip), 0)
+    o.flip = flip
+    return o 
+end
+
+
+function bullet:update()
+    self.pos += self.vel
+    globals.debug_hitbox = s.hitbox
+end
+
+function bullet:draw()
+    spr(self.sp, self.pos.x, self.pos.y, 1, 1, self.flip, false)
+end
+
+
+-->8
+-- particles
+particles = {}
+
+-- add particles
+-- pos: position of particle vector2d
+-- t: type
+-- color: array of colors
+-- max_age: how long the particle should live
+particle={}
+function particle:new(pos, t, color, max_age)
+
+    local old_color = old_color or color
+
+    local o = {}
+    setmetatable(o, self)
+    self.__index = self
+
+    o.pos = pos
+    o.type = t
+    o.color = color
+    o.old_color = old_color
+    o.age = 0
+    o.max_age = max_age
+
+    return o
+end
+
+function particle_update()
+    for part in all(particles) do
+        -- make sure particles are not too old
+        part.age += 1
+
+        -- change color when its old
+        if part.age / part.max_age > 0.5 then
+            part.color = part.old_color
+        end
+
+        if part.age > part.max_age then
+            del(particles, part)
+        end
+    end
+end
+
+function particle_draw()
+    for part in all(particles) do
+        -- 1 pixel particle
+        if part.type == 0 then
+            pset(part.pos.x, part.pos.y, part.color[1])
+        end
+    end
+end
+
+-- create new death particle effect
+function particle_death(pos)
+    local part = particle:new(pos, 0, {8}, 15+rnd(2))
+    add(particles, part)
+end
+
+
+-->8
+--> egg
+
+eggs = {}
+
+egg = {}
+-- create a new camera, map_end is the end of the camera
+function egg:new(pos)
+    local o = {}
+    setmetatable(o, self)
+    self.__index = self
+    o.pos = pos
+    o.sp = 16
+    o.anim = 0
+    o.hitbox = new_hitbox(0,0,8,8)
+    o.vel = vector2d(0, 1)
+    return o 
+end
+
+function egg:update()
+    self:animate()
+end
+
+function egg:draw()
+    spr(self.sp, self.pos.x, self.pos.y)
+end
+
+function egg:animate()
+  if time() - self.anim >.3 then
+    self.anim = time()
+    self.vel.y *= -1
+    self.pos += self.vel
+  end
+end
+
+
+
+-->8
+-- utils
+
+-- draw hitbox
+-- pos: position vector
+-- h: hitbox
+-- c: color (int)
+function draw_hitbox(pos, h, c)
+    local x1 = pos.x + h.x 
+    local x2 = pos.x + h.x + h.w
+    local y1 = pos.y + h.y
+    local y2 = pos.y + h.y + h.h
+    rect(x1, y1, x2, y2, c)
+end
+
+-- vector
+-- vector in R2
+vector = {}
+function vector2d(x, y)
+
+    local v = {}
+    setmetatable(v, vector)
+    v.x = x or 0
+    v.y = y or 0
+    return v 
+end
+
+-- vector:length
+-- returns length of vector
+function vector:length(a)
+    return sqrt(a.x^2 + a.y^2)
+end
+
+-- vector:normalize
+function vector:normalize(a)
+    local m = vector:length(a)
+    if (m == 0) return vector2d(0, 0)
+    local x = a.x / m
+    local y = a.y / m
+    return vector2d(x, y)
+end
+
+-- scaler or dot product
+function vector.__mul(a, b)
+    if type(a) == "number" then
+        return vector2d(a * b.x, a * b.y)
+    elseif type(b) == "number" then
+        return vector2d(a.x * b, a.y * b)
+    end
+    return a.x * b.x + a.y * b.y
+end
+
+function vector.__add(a, b)
+    return vector2d(a.x + b.x, a.y + b.y)
+end
+
+function vector.__sub(a, b)
+    return vector2d(a.x - b.x, a.y - b.y)
+end
+
+function vector.__eq(a, b)
+    return a.x == b.x and a.y == b.y
+end
+
+function vector.__tostring(a)
+    return "(".. a.x .. ", " .. a.y .. ")"
+end
+
+function vector.__concat(s, t) 
+    return tostring(s) .. tostring(t)
+end
+
+-- hitbox
+hitbox = {}
+function new_hitbox(_x, _y, _w, _h)
+
+    local o = {}
+    setmetatable(o, hitbox)
+    o.x = _x or 0
+    o.y = _y or 0
+    o.w = _w or 8
+    o.h = _h or 8
+    return o 
+
+end
+
+-- determine the location of a hitbox
+-- returns a position hitbox
+-- actor: actor who has a hitbox and flip
+-- {x,y,w,h}
+function hitbox_position(b, dir)
+
+    local h = {}
+    local h = new_hitbox()
+    h.w = b.w
+    h.h = b.h
+    -- facing right
+    if dir == 1 then
+        h.x = b.x
+        h.y = b.y
+    -- facing left
+    else
+        h.x = 7 - (b.w + b.x) 
+        h.y = 7 - (b.h + b.y) 
+    end
+    return h
+end
+
+function hitbox.__tostring(s)
+    return "{x: " .. s.x .. ", y: " .. s.y .. ",\n w: " .. s.w .. ", h: " .. s.h .. "}"
+end
+
+function hitbox.__concat(s, t) 
+    return tostring(s) .. tostring(t)
 end
 
 
@@ -394,49 +1329,62 @@ __gfx__
 007007000b0bbb0000bbbbb000bbbbb000bbbbb000bbbbb0000bbb00000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000bbb000000bb000000bb000000bb000000b330000bbb0b0000000000000000000000000000000000000000000000000000000000000000000000000
 000000000003bb000003bb000030bb00000bb30000b003300b000b00000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000ed000000aaa900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00deee0000aaa9a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0ddeedd00aaa9a900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0eeeeed00999aa900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0eedeee009aaa9000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0deddee009aaa0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00deee0009a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00089a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00899a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00089a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000111d0000111d0000111d0000111d000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000ed000011aa9d0011aa9d0011aa9d0011aa9d00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00deee00011a99d0011a99d0011a99d0011a99d00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0ddeedd0011999d0011999d0011999d0011999d00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0eeeeed0061ddd00061ddd00061ddd00061ddd000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0eedeee0066655550666555506665555066655550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0deddee00015dd000015dd000015dd000015dd000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00deee00000d0100000d100000010d000001d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00666600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00669900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00669900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00669900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00066000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00066000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00600600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000dddd00dddddddddddddddddddddddd00dddddddddddd0000000000dddddddd00000000000000000000000000000000000000000000000000000000
-000000000dddddd0dd55d5dddddddddddddddddd0dddddddddddddd000000000d666666100000000000000000000000000000000000000000000000000000000
-00000000ddddddddddd5565dd5ddd5dd55ddddddddd5dd5ddd55dddd00000000d666666100000000000000000000000000000000000000000000000000000000
-00000000dddddddd55d56665565dd6d55ddd5dd5dd555d655d5dd5dd00000000d666666100000000000000000000000000000000000000000000000000000000
-000000005dd5d55d665666d6666556566dd555d6d56665626566d65d00000000d666666100000000000000000000000000000000000000000000000000000000
-000000000dd65c5d6266655d6626666665d66656566e6666c66e566500000000d666666100000000000000000000000000000000000000000000000000000000
-000000000556665566666655566655666c56e66666666c666666662600000000d666666100000000000000000000000000000000000000000000000000000000
-00000000066e66606e666666666e66c666666666c66666666e66666600000000d111111100000000000000000000000000000000000000000000000000000000
-000000000626666000000000666666666666666c6666666600000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000006666c60000000006666676662666666c666266c00000000000000000000000000000000000000000000000000000000000000000000000000000000
-000000000c666660000000006c6667766666c666666666e600000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000066e6660000000006667766666666d56e66c666600000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000066666d000000000666676e65666d5666666666200000000000000000000000000000000000000000000000000000000000000000000000000000000
-000000000666666000000000626666655d6e666626e6006600000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000002666660000000006666e6665d6662660666606000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000006666c60000000006666666c666666660060600000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000a98000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000998000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000a98000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00e80880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0e888888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+08888888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00888880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00888880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00088800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00008000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0776d760007766dddd6677dd667ddd7766dd677d677d7d0055dd5555d55555550000000000000000000000000000000000000000dddddddddddddddddddddddd
+d666dddd076666ddddd666dd666ddd66dddd66dd666dddd055dd5555557755550000000000000000000000000000000000000000177777777777777777777771
+d66dd66dddd66dddd6ddddddd6dd66dddd6ddddd66dddddd555555d5557755d50000000000000000000000000000000000000000166666666666666666666661
+ddddd66dddddddd6ddddd67ddddd66dddddd6dddddddd6dd55555555777775550000000000000000000000000000000000000000166666666666666666666661
+dd5d6ddd6ddd6dddd555d66d5ddddd6ddddddddddd6ddddd5d555577755775550000000000000000000ddd000000000000000000111111111111111111111111
+5d5ddd5dd6ddd5ddd555ddd555555dd5dd55d5dddd555ddd55777775555555550d000000000000d000d0d0000000000000000000000000000000000000000000
+5d5dd555ddd555dd55d5555555dd5555d55555d55d55555d55777555555555d50d0d0000000000d000dd0d000000000000000000000000000000000000000000
+555d5555d5555555555555d555dd55555d5555555555555dd557755d55d555550dd000000000d0d0000dddd00000000000000000000000000000000000000000
+5555555555555dd55555555555555dd555555dd555555dd5dd555555000000000000000090000009000000000000000000000000000000005dddddd55dddddd5
+5dd555d55d555dd55d5555555d555dd555d55dd555555dd5dd77777500000000000000004990009400000000000000000000000000000000d566665dd116665d
+5dd55555555555555555d5555555555555555555d55555555577777700000000000000005449909400000000000000000000000000000000d666666dd616666d
+55555d5555555d55555555555555555555555555555555555777dd7700000000000000000544494400000000000000000000000000000000d666666dd661616d
+55dd55555555555555dd555555d555555d555d55555d555557d7dd7700000000000000000054444400000000000000000000000000000000d666666dd166166d
+55dd55555dd5555555dd55555555dd5555dd555555555555557d777700000000000000000005444400000000000000000000000000000000d666666dd166166d
+555555d55dd555d555555d555555dd5555dd5555dd55555555777ddd00000000046000000004444400000000000000000000000000000000d566665dd516665d
+d5555555555555555555555555555555555555d5dd555d5557777d55000000000446656555544444000000000000000000000000000000005dddddd55dddddd5
+dddddddddddddddd5d55dd6666d555d505555555555dd500000000000000000004455555555444441111116d000000000000000000000000d000000000000000
+1777777117777771555ddd6666dd5555555d5555555dd550000000000000000004500000000444441111116d000000000000000000000000d667700000000000
+166666611666666155d6ddddddddd555505555d555555500000000000000000000000000000444441111116d000000000000000000000000d666770000000000
+166666611655666155ddd5ddddddd55500555555555d5000000000000000000000000000000544441111116d000000000000000000000000d666700000000000
+166666611665666155d5555ddd55d55505555555d5555500000000000000000000000000005441141111116d000000000000000000000000d000000000000000
+16666661166656615555dd55d5dd555500055dd555555000000000000000000000000000054110111111116d000000000000000000000000d667700000000000
+16666661166666615d55dd5555dd55d505555dd555dd5550000000000000000000000000511000111111116d000000000000000000000000d666770000000000
+111111111111111155555555555555550055555555dd5500000000000000000000000000100000011111116d000000000000000000000000d666700000000000
+55dd555555d555555d5555d55555555500555555555555555555550000000000000000005111661111111111000000000000000000000000dddddddd00000000
+d5dd55d555555dd555555555055d5dd5055d55555dd5d5505555d550000000000000000051116611111111110000000000000000000000000666066600000000
+0555055055505dd55505d55505555dd5005555555dd5555055555500000000000000000051116611111111110000000000000000000000000666066600700070
+5505505005050555555550050555555555555dd5555555505dd55555000000000000000051116611111111110000000000000000000000000766076607770777
+0050d0000500050505005000005555555d555dd5555555005dd555d5000000000000000051116611111111110000000000000000000000000777077707660766
+500000000050000505050050005dd55555555555555dd50055555555000000000000000051116611111111110000000000000000000000000070007006660666
+000000000000000005000000055dd5d5055555555d5dd55055555550000000000000000051116611111111110000000000000000000000000000000006660666
+00000000000000000000000055555555005555d5555555555d5555000000000000000000511166111111111100000000000000000000000000000000dddddddd
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -450,205 +1398,61 @@ __gfx__
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000060000000000000006000005000600000000050000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-04000005000000000000000500000000000600000000000400000000000000060000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00050000000400000004000000000400040000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000006000000000000000006000000000000060000000000000004000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00040000000005000000000000000004000000000000000000000000050000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000060000000000040000060000000005000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000004000005000000000000000000000000000000040000040000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00060000000000000400000400050000050000000000000000000000000500000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000005000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-06000000000500000005000000000000000006060004000006000000000000060000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000004000000000006000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00050006000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000040000060000000000040000040000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000004000005000000000000000005000600000000000000000500000400000000000000577747270000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00040000000000000000000000000000000000000000000000000000000000000000000007171717176700000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000005717171717171727000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000600050000000050000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000002000000000660565000000050000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000022000000000606650000000050000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000228000000000006660000044440000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00002288000000000000600000040040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00022888000000000006560000040040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00228888000000000060506000040040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00888888000000000600500600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00008888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000588000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000555000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000555000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000555000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00001151000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00010551000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00100551000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-01000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-01000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-__label__
-88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
-88888888888888888888888888888888888888888888888888888888888888888888888888888888888228228888228822888222822888888822888888ff8888
-88888f8f8f8f88828282828888888888888888888888888888888888888888888888888888888888882288822888222222888222822888882282888888fff888
-88888f8f8f8f88888888888888888888888888888888888888888888888888888888888888888888882288822888282282888222888888228882888888f88888
-88888f8f8f8f888282828288888888888888888888888888888888888888888888888888888888888822888228882222228888882228882288828888fff88888
-88888f8f8f8f88888888888888888888888888888888888888888888888888888888888888888888882288822888822228888228222888882282888ffff88888
-88888f8f8f8f88828282828888888888888888888888888888888888888888888888888888888888888228228888828828888228222888888822888fff888888
-88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
-55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555
-55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555
-55555555555555555555555555555555555555555a595b505555e5f5b505555a595b505555b5c5d5055550505050555555555555555555555555555555555555
-55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555
-55555555555555555555555555555555555555556666666665566666666655666666666557777777775566666666655555555555555555555555555555555555
-555566656665666566656665666566555555e55565556555655655565566556555655565575557555755655565656555e555555555c555555555555555555555
-55556565656556555655655565656565555ee55565656565655656566566556565666565575757775755656565656555ee55555555cc55555c55c55511115555
-5555666566655655565566556655656555eee55565656565655656566566556565655565575757755755656565556555eee5555cccccc555cc55c55511115555
-55556555656556555655655565656565555ee55565656565655656566566556565656665575757775755656566656555ee55555c00cc055cccccc55511115555
-555565556565565556556665656565655555e55565556555655655565556556555655565575557555755655566656555e555555c55c05550cc00055511115555
-55555555555555555555555555555555555555556666666665566666666655666666666557777777775566666666655555555550550555550c55555500005555
-55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555055555555555555
-55555555555555555555555555555555555555555555555555555555555555555555555555d67676d55555555555555555555555555555555555555555555555
-55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555
-55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555
-55555555555500000000055555555555555555555550000000005555555555555555555555000000000555555555555555555555555555555555555555555555
-555556666655066006600555555d555555556666655066006660555555d555555556666655066006660555555d55555555666665555555555555555555555555
-55555655565500600060055555d5d5555555655565500600006055555d5d5555555655565500600006055555d5d5555555655565555555555555555555555555
-5555565756550060006005555d5d5555555565756550060066605555d5d5555555565756550060006605555d5d55555555655565555555555555555555555555
-555556555655006000600555d5d5555555556555655006006000555d5d5555555556555655006000060555d5d555555555655565555555555555555555555555
-555556666655066606660555dd55555555556666655066606660555dd55555555556666655066606660555dd5555555555666665555555555555555555555555
-55555555555500000000055555555555555555555550000000005555555555555555555555000000000555555555555555555555555555555555555555555555
-55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005500000000000000000000000000000555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-555000000000000000000000000000005507770000066000eee00ccc000000055000000000000000000000000000005505555555555555555555555555550555
-555000000000000000000000000000005507000000006000e0e0000c000000055000000000000000000000000000005505555555555555555555555555550555
-555000000000000000000000000000005507700000006000e0e00ccc000000055000000000000000000000000000005505555555555555555555555555550555
-555000000000000000000000000000005507000000006000e0e00c00000000055000000000000000000000000000005505555555555555555555555555550555
-555001000100010000100001000010005507000000066600eee00ccc000d00055001000100010000100001000010005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-555000000000000000000000000000005500770000066000eee00ccc00000005500770000066600eee00ccc00ddd005505555555555555555555555555550555
-555000000000000000000000000000005507000000006000e0e0000c0000000550700000006060000e0000c00d00005505555555555555555555555555550555
-555000000000000000000000000000005507000000006000e0e00ccc0000000550700000006060000e0000c00ddd005505555555555555555555555555550555
-555000000000000000000000000000005507070000006000e0e00c000000000550700000006060000e0000c0000d005505555555555555555555555555550555
-555001000100010000100001000010005507770000066600eee00ccc000d000550077000006660000e0000c00ddd005501555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005517155555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005517715555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005517771555555555555555555555550555
-55500770000066600e0000ccc00ddd005507770707066000eee00ccc000000055000000000000000000000000000005517777155555555555555555555550555
-55507000000060600e000000c00d00005507070777006000e0e0000c000000055000000000000000000000000000005517711555555555555555555555550555
-55507000000060600eee00ccc00ddd005507770707006000e0e00ccc000000055000000000000000000000000000005501171555555555555555555555550555
-55507000000060600e0e00c000000d005507070777006000e0e00c00000000055000000000000000000000000000005505555555555555555555555555550555
-55500770000066600eee00ccc00ddd005507070707066600eee00ccc000d00055001000100010000100001000010005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-55505050505050505050505050505050550505050505050505050505050505055050505050505050505050505050505505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-555000000000000000000000000000005507770707066000eee00ccc000000055000000000000000000000000000005505555555555555555555555555550555
-555000000000000000000000000000005507070777006000e0e0000c000000055000000000000000000000000000005505555555555555555555555555550555
-555000000000000000000000000000005507770707006000e0e00ccc000000055000000000000000000000000000005505555555555555555555555555550555
-555000000000000000000000000000005507070777006000e0e00c00000000055000000000000000000000000000005505555555555555555555555555550555
-555001000100010000100001000010005507070707066600eee00ccc000d00055001000100010000100001000010005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-55500770000066600eee00c0000ddd005507770000066000eee00ccc00000005500770000066600eee00ccc00ddd005505555555555555555555555555550555
-55507000000060600e0e00c000000d005507000000006000e0e0000c0000000550700000006060000e0000c00d00005505555555555555555555555555550555
-55507000000060600e0e00ccc000dd005507700000006000e0e00ccc0000000550700000006060000e0000c00ddd005505555555555555555555555555550555
-55507000000060600e0e00c0c0000d005507000000006000e0e00c000000000550700000006060000e0000c0000d005505555555555555555555555555550555
-55500770000066600eee00ccc00ddd005507000000066600eee00ccc000d000550077000006660000e0000c00ddd005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-55500770000066600eee00c0000ddd005507700707066000eee00ccc000000055000000000000000000000000000005505555555555555555555555555550555
-55507000000060600e0e00c000000d005507070777006000e0e0000c000000055000000000000000000000000000005505555555555555555555555555550555
-55507000000060600e0e00ccc000dd005507070707006000e0e00ccc000000055000000000000000000000000000005505555555555555555555555555550555
-55507000000060600e0e00c0c0000d005507070777006000e0e00c00000000055000000000000000000000000000005505555555555555555555555555550555
-55500770000066600eee00ccc00ddd005507770707066600eee00ccc000d00055001000100010000100001000010005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-555000000000000000000000000000005500770000066000eee00ccc000000055000000000000000000000000000005505555555555555555555555555550555
-555000000000000000000000000000005507000000006000e0e0000c000000055000000000000000000000000000005505555555555555555555555555550555
-555000000000000000000000000000005507000000006000e0e00ccc000000055000000000000000000000000000005505555555555555555555555555550555
-555000000000000000000000000000005507070000006000e0e00c00000000055000000000000000000000000000005505555555555555555555555555550555
-555001000100010000100001000010005507770000066600eee00ccc000d00055001000100010000100001000010005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-55500770000066600e0000ccc00ddd005507700707066000eee00ccc00000005507700707066600eee00ccc00ddd005505555555555555555555555555550555
-55507000000060600e000000c00d00005507070777006000e0e0000c0000000550707077706060000e0000c00d00005505555555555555555555555555550555
-55507000000060600eee00ccc00ddd005507070707006000e0e00ccc0000000550707070706060000e0000c00ddd005505555555555555555555555555550555
-55507070000060600e0e00c000000d005507070777006000e0e00c000000000550707077706060000e0000c0000d005505555555555555555555555555550555
-55507770000066600eee00ccc00ddd005507770707066600eee00ccc000d000550777070706660000e0000c00ddd005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-5550aaaaaaaaaaaaaaaaaaaaaaaaaaa0550aaaaaaaaaaaaaaaaaaaaaaaaaaa0550aaaaaaaaaaaaaaaaaaaaaaaaaaa05505555555555555555555555555550555
-5550aaaaaaaaaaaaaaaaaaaaaaaaaaa0550777aaaaa66aaaeeeaacccaaaaaa0550aaaaaaaaaaaaaaaaaaaaaaaaaaa05505555555555555555555555555550555
-5550aaaaaaaaaaaaaaaaaaaaaaaaaaa05507aaaaaaaa6aaaeaeaaaacaaaaaa0550aaaaaaaaaaaaaaaaaaaaaaaaaaa05505555555555555555555555555550555
-5550aaaaaaaaaaaaaaaaaaaaaaaaaaa055077aaaaaaa6aaaeaeaacccaaaaaa0550aaaaaaaaaaaaaaaaaaaaaaaaaaa05505555555555555555555555555550555
-5550aaaaaaaaaaaaaaaaaaaaaaaaaaa05507aaaaaaaa6aaaeaeaacaaaaaaaa0550aaaaaaaaaaaaaaaaaaaaaaaaaaa05505555555555555555555555555550555
-5550a1aaa1aaa1aaaa1aaaa1aaaa1aa05507aaaaaaa666aaeeeaacccaaadaa0550a1aaa1aaa1aaaa1aaaa1aaaa1aa05505555555555555555555555555550555
-5550aaaaaaaaaaaaaaaaaaaaaaaaaaa0550aaaaaaaaaaaaaaaaaaaaaaaaaaa0550aaaaaaaaaaaaaaaaaaaaaaaaaaa05505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-555000000000000000000000000000005507700707066000eee00ccc00000005500770000066600eee00ccc00ddd005505555555555555555555555555550555
-555000000000000000000000000000005507070777006000e0e0000c0000000550700000006060000e0000c00d00005505555555555555555555555555550555
-555000000000000000000000000000005507070707006000e0e00ccc0000000550700000006060000e0000c00ddd005505555555555555555555555555550555
-555000000000000000000000000000005507070777006000e0e00c000000000550700000006060000e0000c0000d005505555555555555555555555555550555
-555001000100010000100001000010005507770707066600eee00ccc000d000550077000006660000e0000c00ddd005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005505555555555555555555555555550555
-555000000000000000000000000000005507700707066000eee00ccc000000055000000000000000000000000000005505555555555555555555555555550555
-555000000000000000000000000000005507070777006000e0e0000c000000055000000000000000000000000000005505555555555555555555555555550555
-555000000000000000000000000000005507070707006000e0e00ccc000000055000000000000000000000000000005505555555555555555555555555550555
-555000000000000000000000000000005507070777006000e0e00c00000000055000000000000000000000000000005505555555555555555555555555550555
-555001000100010000100001000010005507770707066600eee00ccc000d00055001000100010000100001000010005505555555555555555555555555550555
-55500000000000000000000000000000550000000000000000000000000000055000000000000000000000000000005500000000000000000000000000000555
-55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555
-55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555
-88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
-88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
-88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
-88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
-88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
-88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
-88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
-
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000001150000000000000050000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000001150606666000000050000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000811150555555000000050000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000888000811150505555000555550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000888000811150000100000005000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000778888811150001010000050500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000887777711150005050000050500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000778888818850050005000500050000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000887777787750000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000778888878850000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000887777787750000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000008888878850000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000080050000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000050000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000050000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000050000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __gff__
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010101010101000100000000000000000100010101000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0080808080808000000000000000000004000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000001010101010100000000000000010101010101010101000000000000000003030101010100000000000000000000200000000000000000000000000000002020
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __map__
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000005300420000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000005300420000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000005300420000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000004800484848480000000000004100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000005100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-4242424242424242424242424242424242424242424242424242424242424242000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000796a
+000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000796a
+000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000796a
+000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000796a
+000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000796a
+000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000796a
+000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000011004800000000004a00000000000000000000000000000000000000000000000000000000000000000000796a
+000000000000000000000000000000000000000000000000000000004a0000007f7f7f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000041424242424242424242450000000000000000000000000000000000000000000000000000000000000000796a
+000000000000000000000000000000000000000000000000000000414444444442434343434500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000073515451505054505454720000000000000000000000000000000000000000000060606000000000000000796a
+000000000000000000000000000000000000000000000000000000707170717070727172727200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000064505456505451506572000000000000000000000000000000000000000000000000000000000000005859796a
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004900000000000000000000000000000000000000000000000000000000000000735354545050515172000000000000000000000000000000007f7f00000000000000000000000000006869796a
+000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000004145000000414500000000000000000000005e5e5e000000000000000000005e5e5e00000070645350525254760000000000000000000000000000000000606000000000000000000060606000000000796a
+000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000006475000000747500000000000000000000000000000000000000000000000000000000000000715153525055624500000000000000000000000000006060606160600000000000000000000000000000796a
+0048000000004900004a000048000000110000006000001100000000004800000000000049000000110000490000736500000073757f7f000000494800000000000000000000005e5e5e00000000000000000000007064504647506500490000000000480000004a001160606160606000004a0000004800004900004900796a
+4443434242444343424244424344424343444343444242434244444344424344444244434244424342434243424463750000007462434443444442424342450000000000000000000000000000000000000000000000735151505262444444424244424243444342434442424342444342424243424242434442424242424242
+5054515451555055535155535452525250515555515253555453555151525152535555555354535046475350535552760000007350505050505050505050650000000000000000000000000000000000000000000000715050505050505050505050505050505050505050505050545050505050505050505050505050505050
 __sfx__
 000201000302006020090200b0100d010110501405004000030000300003000030000200002000010000000001000020000100001000010000100000000000000100002000020000200002000010000100001000
 013000202773427724227341d734187241b74422724247441b74422724247341f724247342773429724247342773427724227241d734187241b73422724247241f7342272424724277241f734277342972426734
@@ -660,7 +1464,7 @@ __sfx__
 001800200f7301373116730187301b7301d7301b7301b7301873018730187301b7301f7301d73022730227301f7301f7301f7301b7301d73022730227301f7301f7301d7301d7301b7301b730167301873018730
 000600000264012640066400463009620056100060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600
 000100002903024030210301f0201c0201b0301903018020160301503014030130201202011020100300f0300c0300a0400904009040080300703007030060200502004020030300304004040020400104011030
-000600000b6500c6500d6500d6500e6500c6500a65009650086500763006610000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000400000b6300c6300d6300d6300e6300c6300a63009630086300761006610000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 001000200006300063030630000307625030000300000625005000006300063005000762503053005000050000063000630304300000076250300003000006250050000063000630050007625005000050000500
 001000200a0100c0100c0100a01005010070100a0100c01011010130100f0100c0100c0100c0100f0101301016010130100f0100c0100f01011010130101601016010110100f010130100f010110100f0100f010
 001000000077503705007050077500705007050077500705007050077500705007050077500705007750070500775037050070500775007050070500775007050070500775007050070503775007050077500705
