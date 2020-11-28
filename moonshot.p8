@@ -7,6 +7,8 @@ __lua__
 function _init()
     m = gmap:new()
     g = game:new()
+    p = player:new()
+    c = cam:new()
     g:change_state(menu)
     -- g:change_state(level_1)
 end
@@ -37,12 +39,23 @@ globals = {
     title = "moonshot",
     version = "0.0.0",
 
+    -- physics
+    grav = 0.05,
+    friction = 0.425,
+
     -- stars 
     stars_color_pal={1,2,9,12,13},
 
     -- debug information
     debug = true,
     debug_var = "",
+
+    -- sprite flags
+    solid = 0,
+    egg = 3,
+    spike = 5,
+    bullet = 6,
+
 }
 
 -->8
@@ -125,6 +138,20 @@ function vector.__concat(s, t)
     return tostring(s) .. tostring(t)
 end
 
+-- hitbox
+hitbox = {}
+function hitbox:new(_x, _y, _w, _h)
+
+    local o = {}
+    setmetatable(o, hitbox)
+    o.x = _x or 0
+    o.y = _y or 0
+    o.w = _w or 8
+    o.h = _h or 8
+    return o 
+
+end
+
 -->8
 -- game
 game = {}
@@ -147,10 +174,11 @@ end
 function game:draw()
     self.state:draw()
 
-    if globals.debug then
-        -- print("p.pos: " .. p.pos, x, 14, 9)
-        local row = 0
-        print("var: " .. globals.debug_var, x, row, 9)
+    if globals.debug
+    and g.state.level then
+        local row = 7
+        print("var: " .. globals.debug_var, c.pos.x, 0 * row + c.pos.y, 9)
+        print("p.pos: " .. p.pos, c.pos.x, 1 * row + c.pos.y, 9)
     end
 
 end
@@ -184,14 +212,16 @@ end
 function gmap:init(pos, length, stars, draw_map)
 
     local l = length or 1024
-    local s = stars or true
-    local d = draw_map or true
+    local s = true
+    local d = true
+    if (stars ~= nil) s = stars
+    if (draw_map ~= nil) d = draw_map
 
     self.pos = pos
     self.start = self.pos.x
     self.mend = self.pos.x + l
     self.stars = {}
-    self.draw_map = draw_map
+    self.draw_map = d
     if s then
         self:stars_init()
     end
@@ -207,7 +237,7 @@ function gmap:stars_init()
     s={}
     s.pos = vector2d()
     s.pos.x=rnd(m.mend)
-    s.pos.y=rnd(128)
+    s.pos.y=rnd(128) + self.pos.y
     s.color=globals.stars_color_pal[
         flr(rnd(count(globals.stars_color_pal)))+1]
     s.size=flr(rnd(2))
@@ -224,15 +254,17 @@ end
 -- draw map
 function gmap:draw()
 
-    if self.draw_map then
-        map(self.pos.x, self.pos.y)
-    end
-
     -- draw stars
     for s in all(self.stars) do
         local x = s.pos.x
         local y = s.pos.y
         rectfill(x, y, flr(x)+s.size, flr(y)+s.size, s.color)
+    end
+
+    -- draw map
+    if self.draw_map then
+        -- map(self.pos.x, self.pos.y)
+        map(0, self.pos.y / 8, 0, self.pos.y)
     end
 
 end
@@ -248,7 +280,28 @@ function cam:new()
     return o 
 end
 
-function cam:init()
+function cam:init(pos)
+    self.pos = pos
+end
+
+function cam:update()
+    -- camera follows player
+    self.pos.x = p.pos.x - 64 + (p.w / 2)
+
+    -- end a gamescreen early from end
+    if self.pos.x > m.mend - 128 then
+        self.pos.x = m.mend - 128
+        m.start = m.mend - 128
+    end
+
+    -- left end of camera doesnt move past start
+    if (self.pos.x < m.start) then
+        self.pos.x = m.start
+    end
+
+
+    camera(self.pos.x, self.pos.y)
+
 end
 
 -->8 
@@ -268,6 +321,7 @@ end
 -- reset menu screen
 function menu:init()
     -- map is just blank screen
+    self.level = false
     m:init(vector2d(), 128, true, false)
 
 end
@@ -306,7 +360,7 @@ function level:new()
     return o 
 end
 
--- should be overwritten by subclass
+-- initialize level
 function level:init()
     -- init map to desired settings
     -- set baddies positions
@@ -321,6 +375,9 @@ function level:update()
     for e in all(self.eggs) do
         e:update()
     end
+    p:update()
+    c:update()
+    bullets_update()
 end
 
 function level:draw()
@@ -328,9 +385,9 @@ function level:draw()
     for e in all(self.eggs) do
         e:draw()
     end
-    map(m.pos.x, m.pos.y)
+    p:draw()
+    bullets_draw()
 end
-
 
 -->8
 -- level_1
@@ -338,7 +395,524 @@ end
 level_1 = inherits_from(level)
 
 function level_1:init()
+    self.level = true
+    self.level_num = 1
     m:init(vector2d(), 1024)
+    p:init(vector2d())
+    c:init(vector2d())
+end
+
+-->8
+-- level_2
+level_2 = inherits_from(level)
+
+function level_2:init()
+    self.level = true
+    self.level_num = 2
+    m:init(vector2d(0,128), 1024)
+    p:init(vector2d(0,128))
+    c:init(vector2d(0,128))
+end
+
+
+
+-->8
+-- actors
+actor = {}
+function actor:new()
+    local o = {}
+    setmetatable(o, self)
+    self.__index = self
+    return o 
+end
+
+-- actor:init
+function actor:init()
+end
+
+-- actor:animate
+-- assumes 6 sprites
+-- 1st is idle, 4 running, 1 jumping
+-- in that order
+-- all sprites should be in the same row
+function actor:animate()
+  
+    if self.state == "jumping" then
+        self.sp = self.base_sp + 5
+    elseif self.state == "running" then
+
+    if time() - self.anim > .1 then
+      self.anim=time()
+      self.sp += 1
+      if self.sp > self.base_sp + 4 then
+        self.sp = self.base_sp + 1
+      end
+    end
+
+  else --player idle/falling
+      self.sp = self.base_sp
+  end
+end
+
+-- actor:jump
+function actor:jump()
+    sfx(00)
+    self.jump_press = 0
+    self.grounded_press = 0
+    self.grounded = false
+
+    self.vel.y -= self.acc.y 
+end
+
+-- actor:death
+function actor:death()
+end
+
+-- actor:draw_lives
+function actor:draw_lives()
+end
+
+function actor:shoot()
+    -- local b = bullet:new(self.pos, 32, new_hitbox(5,2,3,3), 50, self.flip)
+    -- sfx(10)
+    -- add(bullets, b)
+end
+
+-- actor:update
+-- update actor
+function actor:update()
+end
+
+-- should be drawn
+function actor:draw()
+    self:draw_lives()
+    spr(self.sp, self.pos.x, self.pos.y, 1, 1, self.flip, false)
+    if globals.debug then 
+        self:hitbox_draw(6)
+    end
+end
+
+-- actor:direction
+-- determine the direction actor is facing
+-- returns -1 if facing left, 1 otherwise
+function actor:direction(flip)
+
+    if flip then
+        return -1
+    end
+    return 1
+end
+
+-- actor:move
+-- move the actor on screen
+function actor:move()
+end
+
+function actor:hitbox_position()
+    local dir = self:direction(self.flip)
+    local x = 0
+    local y = 0
+    -- facing right
+    if dir == 1 then
+        x = self.hitbox.x
+        y = self.hitbox.y
+    else
+        x = self.w - 1 - (self.hitbox.x + self.hitbox.w)
+        y = self.h - 1 - (self.hitbox.y + self.hitbox.h)
+    end
+
+    return hitbox:new(x, y, self.hitbox.w, self.hitbox.h)
+end
+
+function actor:hitbox_abs_position()
+    local h = self:hitbox_position()
+    h.x += self.pos.x
+    h.y += self.pos.y
+    return h
+end
+
+function actor:hitbox_draw(c)
+    local h = self:hitbox_abs_position()
+
+    local x1 = h.x 
+    local x2 = h.x + h.w
+    local y1 = h.y
+    local y2 = h.y + h.h
+    rect(x1, y1, x2, y2, c)
+end
+
+
+function actor:map_collision(direction, flag)
+
+    -- TODO switch to hitbox
+    local x=self.pos.x  local y=self.pos.y
+    local w=self.w  local h=self.h
+  
+    local x1=0  local y1=0
+    local x2=0  local y2=0
+  
+    if direction == "left" then
+        x1 = x - 1 
+        y1 = y
+        x2 = x
+        y2 = y + h - 1
+        
+    elseif direction == "right" then
+        x1 = x + w - 1
+        y1 = y
+        x2 = x + w
+        y2 = y + h - 1
+        
+    elseif direction == "up" then
+        x1 = x + 2
+        y1 = y - 1
+        x2 = x + w - 3
+        y2 = y
+        
+    elseif direction == "down" then
+        x1 = x + 2
+        y1 = y + h
+        x2 = x + w - 3
+        y2 = y + h
+    end
+    -- sprites are 8 pixels
+    x1 /= 8
+    y1 /= 8
+    x2 /= 8
+    y2 /= 8
+  
+    if fget(mget(x1,y1),flag) 
+    or fget(mget(x1,y2),flag) 
+    or fget(mget(x2,y1),flag) 
+    or fget(mget(x2,y2),flag) then
+        return true
+    end
+    
+    return false 
+
+
+end
+
+-->8
+-- player
+
+player = inherits_from(actor)
+
+function player:init(pos)
+
+    -- base sprite
+    self.base_sp = 1
+    self.sp = 1
+    self.flip = false
+
+    -- total sprite size
+    self.w = 8
+    self.h = 8
+
+    -- pos: vector2d needs a starting position
+    self.pos = pos
+
+    -- hitbox: needs a hitbox
+    self.hitbox = hitbox:new(1,0,6,7)
+
+    self.anim = 0
+    -- falling/running/jumping/idle
+    self.state = "falling"
+    self.health = 1
+    self.lives = 3
+
+    -- velocity
+    self.vel = vector2d()
+    self.max_vel = vector2d(2, 2)
+
+    self.acc = vector2d(0.5, 2.2)
+    self.dcc = vector2d(0.8, 0)
+    self.dcc_air = vector2d(1.5, 0)
+
+    -- jumping
+    self.jump_hold = globals.grav
+
+    -- check if almost touch ground
+    self.jump_press = 0
+    self.jump_press_time = 0.2
+
+    self.grounded_press = 0
+    self.grounded_press_time = 0.25
+    self.grounded = false
+
+
+end
+
+function player:update()
+
+    self.vel.x *= globals.friction 
+    self.vel.y += globals.grav + self.jump_hold
+
+    -- shooting
+    if (btnp(4)) self:shoot()
+
+    -- left
+    if btn(0) then
+        self.vel.x -= self.acc.x
+        self.flip = true
+    -- right
+    elseif btn(1) then
+        self.vel.x += self.acc.x
+        self.flip = false
+    -- allow a minor delay before changing directions/stopping
+    else
+        if self.grounded then
+            self.vel.x *= self.dcc.x
+        else
+            self.vel.x *= self.dcc_air.x
+        end
+    end
+
+    
+    -- jumping
+    self.grounded_press -= 1/60
+    if self.grounded then
+        self.grounded_press = self.grounded_press_time
+    end
+    self.jump_press -= 1/60
+
+    if btnp(5) then
+        self.jump_press = self.jump_press_time
+    end
+    -- h check for how long jump is press
+    if btn(5) then
+        self.jump_hold -= 0.005
+        if (self.jump_hold < 0) self.jump_hold = 0
+    else
+        self.jump_hold = globals.grav
+    end
+
+    if self.jump_press > 0
+    and self.grounded_press > 0 then
+        self:jump()
+    end
+
+    self:move()
+
+    -- check picking up egg
+    -- for e in all(eggs) do
+    --     if tor_collision(e, self) then
+    --         del(eggs, e)
+    --     end
+    -- end
+
+    if self.health <= 0 then
+        self:death()
+    end
+
+
+    -- globals.debug_var = self.sp
+
+    self:animate()
+
+end
+
+function player:shoot()
+    local b = bullet:new()
+    b:init(self.pos, 32, hitbox:new(5,2,3,3), 60, self.flip)
+    sfx(10)
+    add(bullets, b)
+end
+
+function player:death()
+    self.lives -= 1
+    self.health = 1
+    if self.lives <= 0 then
+        g:change_state(game_over)
+    else
+        -- TODO this needs adjusting
+        p.pos = vector2d(20, 20)
+    end
+end
+
+function player:move()
+    -- check y direction
+    if self.vel.y > 0 then
+        self.state = "falling"
+
+        -- if player falls off the map
+        globals.debug_var = m.pos.y + 128
+        if self.pos.y > m.pos.y + 128 then
+            self.health -= self.health
+            return
+        end
+
+        -- limit actor to max speed
+        self.vel.y = mid(-self.max_vel.y, self.vel.y, self.max_vel.y)
+
+        if self:map_collision("down", globals.solid) then
+            self.grounded = true
+
+            -- left/right movement
+            -- TODO is actor really running if falling in the air
+            -- fix this
+            if self.vel.x != 0 then
+                self.state = "running"
+            else
+                self.state = "idle"
+            end
+            self.vel.y = 0
+            self.pos.y -= ((self.pos.y + self.h + 1) % 8) - 1
+        end
+
+        if self:map_collision("down", globals.spike) 
+        or self:map_collision("up", globals.spike) 
+        or self:map_collision("right", globals.spike) 
+        or self:map_collision("left", globals.spike) then
+            self.vel.y = 0
+            self.health -= self.health
+        end
+
+    elseif self.vel.y < 0 then
+        self.state = "jumping"
+        if self:map_collision("up", globals.solid) then
+            self.vel.y = 0
+        end
+    end
+
+    -- check x direction
+    -- left movement
+    if self.vel.x < 0 then
+        -- limit actor to max speed
+        self.vel.x = mid(-self.max_vel.x, self.vel.x, self.max_vel.x)
+        if self:map_collision("left", globals.solid) then
+            self.vel.x = 0
+        end
+    -- right movement
+    elseif self.vel.x > 0 then
+        self.vel.x = mid(-self.max_vel.x, self.vel.x, self.max_vel.x)
+        if self:map_collision("right", globals.solid) then
+            self.vel.x = 0
+        end
+    end
+
+    self.pos += self.vel
+
+    --limit to map
+    if self.pos.x < m.start then
+        self.pos.x = m.start
+    end
+    if self.pos.x > m.mend - self.w then
+        self.pos.x = m.mend - self.w
+    end 
+
+    if self.pos.x >= m.mend - 15 then
+        -- levelmanager:next_level()
+        -- TODO: Switch to next level
+        if g.state.level_num == 1 then
+            g:change_state(level_2)
+        end
+    end
+
+
+end
+
+
+-->8
+-- bullets
+
+-- array of all bullets
+bullets={}
+
+function bullets_update()
+    for b in all(bullets) do
+        b:update()
+
+        local del_bullet = false
+
+        if b.pos.x < b.origin.x - b.distance 
+        or b.pos.x > b.origin.x + b.distance 
+        or b.pos.x < 0 then
+            del_bullet = true
+        end
+
+        -- assumes sprite faces right
+        local direction = "right"
+        if (b.flip) direction = "left"
+        collide_wall = b:map_collision(direction, globals.solid)
+        if collide_wall then
+            del_bullet = true
+        end
+
+        if (del_bullet) del(bullets, b)
+
+    end
+end
+
+function bullets_draw()
+    for b in all(bullets) do
+        b:draw()
+
+        if globals.debug then 
+            b:hitbox_draw(7)
+        end
+
+    end
+end
+
+bullet = inherits_from(actor)
+
+function bullet:init(pos, sp, hitbox, distance, flip)
+    self.pos = pos
+    self.sp = sp
+    self.flip = flip
+    self.origin = pos
+    self.distance = distance
+    self.hitbox = hitbox
+    self.w = 8
+    self.h = 8
+    self.vel = vector2d(1.5 * self:direction(flip), 0)
+
+end
+
+function bullet:update()
+    self.pos += self.vel
+end
+
+-->8
+-- game over 
+game_over = {}
+
+function game_over:new()
+    local o={}
+    setmetatable(o, self)
+    self.__index = self
+    return o
+end
+
+-- game_over:init
+-- reset game_over screen
+function game_over:init(win)
+    self.win = win
+    self.level = false
+    -- map is just blank screen
+    m:init(vector2d(), 128, true, false)
+    -- c:init(vector2d())
+end
+
+-- game_over:update
+-- check if player wants to start
+function  game_over:update()
+    if btnp(4) then
+        -- start playing level 1
+        g:change_state(menu)
+    end
+end
+
+-- game_over:draw
+function  game_over:draw()
+    m:draw()
+    if self.win then
+        print("you win!", 60, 60)
+    else
+        print("you lose, loser.", 60, 60)
+    end
+    print("press ❎", 50, 80, 7)
 end
 
 
@@ -605,6 +1179,22 @@ __map__
 0048000000004900004a000048000000110000006000001100000000004800000000000049000000110000490000736500000073757f7f000000494800000000000000000000005e5e5e00000000000000000000007064504647506500490000000000480000004a001160606160606000004a0000004800004900004900796a
 4443434242444343424244424344424343444343444242434244444344424344444244434244424342434243424463750000007462434443444442424342450000000000000000000000000000000000000000000000735151505262444444424244424243444342434442424342444342424243424242434442424242424242
 5054515451555055535155535452525250515555515253555453555151525152535555555354535046475350535552760000007350505050505050505050650000000000000000000000000000000000000000000000715050505050505050505050505050505050505050505050545050505050505050505050505050505050
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0042424200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4242424242000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
 000201000302006020090200b0100d010110501405004000030000300003000030000200002000010000000001000020000100001000010000100000000000000100002000020000200002000010000100001000
 013000202773427724227341d734187241b74422724247441b74422724247341f724247342773429724247342773427724227241d734187241b73422724247241f7342272424724277241f734277342972426734
