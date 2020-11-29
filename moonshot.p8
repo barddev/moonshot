@@ -377,6 +377,7 @@ function level:update()
     end
     p:update()
     c:update()
+    baddies_update()
     bullets_update()
 end
 
@@ -386,6 +387,7 @@ function level:draw()
         e:draw()
     end
     p:draw()
+    baddies_draw()
     bullets_draw()
 end
 
@@ -400,6 +402,12 @@ function level_1:init()
     m:init(vector2d(), 1024)
     p:init(vector2d())
     c:init(vector2d())
+
+    baddies = {
+        baddie:new()
+    }
+    baddies[1]:init(vector2d(80,50))
+
 end
 
 -->8
@@ -541,6 +549,19 @@ function actor:hitbox_draw(c)
     rect(x1, y1, x2, y2, c)
 end
 
+function actor:collision(actor)
+    local a =  self:hitbox_abs_position()
+    local b = actor:hitbox_abs_position()
+
+    if a.x < b.x + b.w
+    and a.x + a.w > b.x
+    and a.y < b.y + b.h
+    and a.y + a.h > b.y then
+        return true
+    end
+    return false
+end
+
 
 function actor:map_collision(direction, flag)
 
@@ -640,7 +661,6 @@ function player:init(pos)
     self.grounded_press_time = 0.25
     self.grounded = false
 
-
 end
 
 function player:update()
@@ -713,8 +733,12 @@ function player:update()
 end
 
 function player:shoot()
+
+    local dir = self:direction()
+
     local b = bullet:new()
     b:init(self.pos, 32, hitbox:new(5,2,3,3), 60, self.flip)
+
     sfx(10)
     add(bullets, b)
 end
@@ -736,7 +760,6 @@ function player:move()
         self.state = "falling"
 
         -- if player falls off the map
-        globals.debug_var = m.pos.y + 128
         if self.pos.y > m.pos.y + 128 then
             self.health -= self.health
             return
@@ -811,6 +834,198 @@ function player:move()
 
 
 end
+
+-->8
+-->baddies
+
+baddies = {}
+
+function baddies_update()
+    for b in all(baddies) do
+        b:update()
+        if b.health <= 0 then
+            del(baddies, b)
+        end
+    end
+end
+
+function baddies_draw()
+    for b in all(baddies) do
+        b:draw()
+    end
+end
+
+baddie = inherits_from(actor)
+
+function baddie:init(pos)
+    self.pos = pos
+    self.vel = vector2d()
+    self.acc = vector2d(0.5, 0)
+    self.max_vel = vector2d(1, 2)
+    self.state = "falling"
+
+    self.base_sp = 17 
+    self.sp = 17
+    self.flip = false
+
+    -- total sprite size
+    self.w = 8
+    self.h = 8
+
+    self.anim = 0
+    self.hitbox = hitbox:new(0,0,7,7)
+    self.health = 3
+    self.lives = 1
+
+    -- bullet
+    self.bullet_sp = 33
+    self.bullet_hitbox = hitbox:new(1,2,7,2)
+    self.bullet_timer = 0
+    self.bullet_distance = 60
+    self.bullet_max_time = 30
+
+    self.grounded = false
+
+    self.dir = -1
+end
+
+function baddie:update()
+    self.vel.y += globals.grav
+    self.vel.x *= globals.friction
+
+    if self.grounded then
+        self.vel.x += self.dir * self.acc.x
+    else
+        self.vel.x = 0
+    end 
+
+    self:move()
+
+    self:shoot()
+
+    -- check if hit by bullet
+    for b in all(bullets) do
+        if b:collision(self) then
+            self.health -= 1
+            del(bullets, b)
+        end
+    end
+
+    if self.dir == 1 then 
+        self.flip = false
+    else
+        self.flip = true
+    end
+
+    self:animate()
+
+end
+
+function baddie:move()
+    -- check y direction
+    if self.vel.y > 0 then
+        self.state = "falling"
+
+        -- if player falls off the map
+        globals.debug_var = m.pos.y + 128
+        if self.pos.y > m.pos.y + 128 then
+            self.health -= self.health
+            return
+        end
+
+        -- limit actor to max speed
+        self.vel.y = mid(-self.max_vel.y, self.vel.y, self.max_vel.y)
+
+        if self:map_collision("down", globals.solid) then
+            self.grounded = true
+
+            -- left/right movement
+            -- TODO is actor really running if falling in the air
+            -- fix this
+            if self.vel.x != 0 then
+                self.state = "running"
+            else
+                self.state = "idle"
+            end
+            self.vel.y = 0
+            self.pos.y -= ((self.pos.y + self.h + 1) % 8) - 1
+        end
+
+        if self:map_collision("down", globals.spike) 
+        or self:map_collision("up", globals.spike) 
+        or self:map_collision("right", globals.spike) 
+        or self:map_collision("left", globals.spike) then
+            self.vel.y = 0
+            self.health -= self.health
+        end
+    end
+
+    -- check x direction
+    -- left movement
+    if self.vel.x < 0 then
+        -- limit actor to max speed
+        self.vel.x = mid(-self.max_vel.x, self.vel.x, self.max_vel.x)
+        if self:map_collision("left", globals.solid) then
+            self.vel.x = 0
+            self.dir *= -1
+        end
+    -- right movement
+    elseif self.vel.x > 0 then
+        self.vel.x = mid(-self.max_vel.x, self.vel.x, self.max_vel.x)
+        if self:map_collision("right", globals.solid) then
+            self.vel.x = 0
+            self.dir *= -1
+        end
+    end
+
+    -- TODO remove this
+    self.vel.x = 0
+    self.pos += self.vel
+
+end
+
+-- badie shoot
+function baddie:shoot()
+
+
+    -- globals.debug_var = self.hitbox
+    if self.bullet_timer <= self.bullet_max_time then
+        self.bullet_timer += 1
+        return
+    end
+    self.bullet_timer = 0
+
+
+
+    local b_pos = vector2d(self.pos.x, self.pos.y)
+
+    -- facing right
+    if self.dir == 1 then
+        if p.pos.x - self.pos.x < self.bullet_distance 
+        and p.pos.x - self.pos.x > 0 then
+            b_pos.x += self.w
+        else
+            return
+        end
+
+    -- facing left
+    else
+        if self.pos.x - p.pos.x < self.bullet_distance 
+        and self.pos.x - p.pos.x > 0 then
+            b_pos.x -= 7
+        else
+            return
+        end
+    end
+
+    local b = bullet:new()
+
+    b:init(b_pos, self.bullet_sp, self.bullet_hitbox, 60, self.flip)
+    add(bullets, b)
+
+end
+
+
 
 
 -->8
@@ -925,20 +1140,20 @@ __gfx__
 007007000b0bbb0000bbbbb000bbbbb000bbbbb000bbbbb0000bbb00000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000bbb000000bb000000bb000000bb000000b330000bbb0b0000000000000000000000000000000000000000000000000000000000000000000000000
 000000000003bb000003bb000030bb00000bb30000b003300b000b00000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000111d0000111d0000111d0000111d000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000ed000011aa9d0011aa9d0011aa9d0011aa9d00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00deee00011a99d0011a99d0011a99d0011a99d00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0ddeedd0011999d0011999d0011999d0011999d00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0eeeeed0061ddd00061ddd00061ddd00061ddd000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0eedeee0066655550666555506665555066655550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0deddee00015dd000015dd000015dd000015dd000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00deee00000d0100000d100000010d000001d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000111d0000111d0000111d0000111d0000111d0000111d00000000000000000000000000000000000000000000000000000000000000000000000000
+000ed000011aa9d0011aa9d0011aa9d0011aa9d0011aa9d0011aa9d0000000000000000000000000000000000000000000000000000000000000000000000000
+00deee00011a99d0011a99d0011a99d0011a99d0011a99d0011a99d0000000000000000000000000000000000000000000000000000000000000000000000000
+0ddeedd0011999d0011999d0011999d0011999d0011999d0011999d0000000000000000000000000000000000000000000000000000000000000000000000000
+0eeeeed0061ddd00061ddd00061ddd00061ddd00061ddd00061ddd00000000000000000000000000000000000000000000000000000000000000000000000000
+0eedeee0066655550666555506665555066655550666555506665555000000000000000000000000000000000000000000000000000000000000000000000000
+0deddee00015dd000015dd000015dd000015dd000015dd000015dd00000000000000000000000000000000000000000000000000000000000000000000000000
+00deee00000d0100000d0100000d100000010d000001d0000001d000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000a98000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000998000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000a98000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000a980bbbb3330000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000000bbbbbbb0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00e80880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
