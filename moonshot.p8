@@ -947,17 +947,15 @@ function player:move()
         self.vel.x = mid(-self.max_vel.x, self.vel.x, self.max_vel.x)
         if self:map_collision("left", globals.solid) then
             self.vel.x = 0
+            self.state = "idle"
         end
     -- right movement
     elseif self.vel.x > 0 then
         self.vel.x = mid(-self.max_vel.x, self.vel.x, self.max_vel.x)
         if self:map_collision("right", globals.solid) then
             self.vel.x = 0
-        end
-    end
-
-    if self.vel.x == 0 then
         self.state = "idle"
+        end
     end
 
     self.pos += self.vel
