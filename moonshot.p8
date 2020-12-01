@@ -335,7 +335,7 @@ end
 -- menu:update
 -- check if player wants to start
 function  menu:update()
-    if btnp(4) then
+    if btnp(5) then
         -- start playing level 1
         g:change_state(level_1)
     end
@@ -470,6 +470,7 @@ end
 
 function level_1:player_position()
     p.pos = vector2d(2, 104)
+    p.flip = false
 end
 
 -->8
@@ -507,6 +508,7 @@ end
 
 function level_2:player_position()
     p.pos = vector2d(20, 176)
+    p.flip = false
 end
 
 -->8
@@ -779,7 +781,7 @@ function player:update()
     self.vel.y += globals.grav + self.jump_hold
 
     -- shooting
-    if (btnp(4)) self:shoot()
+    if (btnp(5)) self:shoot()
 
     -- left
     if btn(0) then
@@ -806,11 +808,11 @@ function player:update()
     end
     self.jump_press -= 1/60
 
-    if btnp(5) then
+    if btnp(4) then
         self.jump_press = self.jump_press_time
     end
     -- h check for how long jump is press
-    if btn(5) then
+    if btn(4) then
         self.jump_hold -= 0.005
         if (self.jump_hold < 0) self.jump_hold = 0
     else
@@ -1283,7 +1285,7 @@ function  game_win:update()
         self.time += 1
         return
     end
-    if btnp(4) then
+    if btnp(5) then
         -- start playing level 1
         g:change_state(menu)
     end
@@ -1322,7 +1324,7 @@ end
 -- game_over:update
 -- check if player wants to start
 function  game_over:update()
-    if btnp(4) then
+    if btnp(5) then
         -- start playing level 1
         g:change_state(menu)
     end
@@ -1450,6 +1452,9 @@ function boss:move()
 end
 
 function boss:shoot()
+    if p.pos.x < m.mend - 140 then
+        return
+    end
     local b_pos = vector2d(self.pos.x-8, self.pos.y+4)
     local b = bullet:new()
     b:init(b_pos, self.bullet_sp, self.bullet_hitbox, 80, -1)
